@@ -52,8 +52,9 @@ def simulate(stimulus, deltat=0.00005, v_zero=0.0, a_zero=2.0, threshold=1.0, v_
     adapt = a_zero
 
     # prepare noise:    
+    noise_strength_sqrt = np.sqrt(noise_strength * 2)
     noise = np.random.randn(len(stimulus))
-    noise *= noise_strength / np.sqrt(deltat)
+    noise *= noise_strength_sqrt / np.sqrt(deltat)
 
     # rectify stimulus array:
     stimulus = stimulus.copy()

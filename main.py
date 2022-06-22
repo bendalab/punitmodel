@@ -18,7 +18,7 @@ def main():
     example_cell_idx = 20
 
     # load model parameter:
-    parameters = load_models("models.csv")
+    parameters = load_models("models_big_fit_d_right.csv")
 
     model_params = parameters[example_cell_idx]
     cell = model_params.pop('cell')
