@@ -36,8 +36,9 @@ def load_models(file):
 
 
 @jit(nopython=True)
-def simulate(stimulus, deltat=0.00005, v_zero=0.0, a_zero=2.0, threshold=1.0, v_base=0.0,
-             delta_a=0.08, tau_a=0.1, v_offset=-10.0, mem_tau=0.015, noise_strength=0.05,
+def simulate(stimulus, deltat=0.00005, v_zero=0.0, a_zero=2.0,
+             threshold=1.0, v_base=0.0, delta_a=0.08, tau_a=0.1,
+             v_offset=-10.0, mem_tau=0.015, noise_strength=0.05,
              input_scaling=60.0, dend_tau=0.001, ref_period=0.001):
     """ Simulate a P-unit.
 

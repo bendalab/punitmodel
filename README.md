@@ -8,10 +8,10 @@ P-unit electroreceptors of Apteronotus leptorhynchus
 The file `models.csv` contains the model parameters for each cell in a
 table.
 
-The `load_models()` function in `models.py` can be used to load these parameters
+The `load_models()` function in `model.py` can be used to load these parameters
  into a list of dictionaries.
 
-You may use the `simulate()` function in `models.py` to simulate a
+You may use the `simulate()` function in `model.py` to simulate a
 model for a given stimulus.
 
 In `main.py` you can see how to do this.
