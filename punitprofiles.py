@@ -17,11 +17,9 @@ def baseline_isih(spikes, sigma=1e4, maxisi=0.1):
     return isi, kde, rate, cv
 
 
-def baseline_vectorstrength(spikes, period, sigma=0.05, deltat=0.001):
-    kernel = gaussian_kde(spikes, sigma*period/np.std(spikes, ddof=1))
-    spike_time = np.arange(0, spikes[-1]+period, deltat)
-    spike_rate = kernel(spike_time)
-    time = np.arange(-0.5*period, 1.5*period, sigma*period)
+def baseline_vectorstrength(spikes, period, sigma=0.05, deltat=0.0001):
+    time = np.arange(0, period, 0.01*period)
+    phases = 2*np.pi*time/period
     rate = np.zeros(len(time))
     n = 0
     vectors = np.zeros(len(spikes), dtype=complex)
@@ -30,12 +28,14 @@ def baseline_vectorstrength(spikes, period, sigma=0.05, deltat=0.001):
         cycle_time = spike - cycle
         phase = 2*np.pi*cycle_time/period
         vectors[i] = np.exp(1j*phase)
-        k = int((cycle - time[0])//deltat)
-        if k >= 0 and k+len(time) <= len(spike_rate):
-            rate += spike_rate[k:k+len(time)]
+        cycle_spikes = spikes[(spikes - cycle >= -10*period) & (spikes - cycle <= 10*period)] - cycle
+        if len(cycle_spikes) > 1:
+            kernel = gaussian_kde(cycle_spikes, sigma*period/np.std(cycle_spikes, ddof=1))
+            cycle_rate = kernel(time)
+            rate += cycle_rate
             n += 1
     vs = np.abs(np.mean(vectors))
-    return time, rate/n, vs
+    return phases, rate/n, vs
         
 
 def baseline_serialcorr(spikes, max_lag=10):
@@ -78,15 +78,24 @@ def instantaneous_rate(spikes, time):
 
 
 def base_profile(axi, axc, axv, cell, EODf, model_params):
-    max_eods = 10.5
+    data_color = 'tab:blue'
+    model_color = 'tab:red'
+    lsGrid = dict(color='gray', ls=':')
+    lsData = dict(color=data_color, lw=2)
+    lsModel = dict(color=model_color, lw=2)
+    lpsData = dict(ls='-', color=data_color, lw=2, marker='o', ms=8, clip_on=False)
+    lpsModel = dict(ls='-', color=model_color, lw=2, marker='o', ms=8, clip_on=False)
+    fsData = dict(color=data_color, alpha=0.5)
+    fsModel = dict(color=model_color, alpha=0.5)
+    max_eods = 15.5
+    max_lag = 16
     eod_period = 1/EODf
     # data:
     data_spikes = np.load(f'celldata/{cell}/baseline_spikes_trial_1.npy')
     data_isi, data_kde, data_rate, data_cv = \
-        baseline_isih(data_spikes, sigma=0.1*eod_period, maxisi=max_eods*eod_period)
-    data_ctime, data_crate, data_vs = baseline_vectorstrength(data_spikes, eod_period, sigma=0.05)
-    print(data_vs)
-    data_lags, data_corrs = baseline_serialcorr(data_spikes, max_lag=10)
+        baseline_isih(data_spikes, sigma=0.05*eod_period, maxisi=max_eods*eod_period)
+    data_cphase, data_crate, data_vs = baseline_vectorstrength(data_spikes, eod_period, sigma=0.02)
+    data_lags, data_corrs = baseline_serialcorr(data_spikes, max_lag=max_lag)
     # model:
     deltat = model_params["deltat"]
     time = np.arange(0, 30, deltat)
@@ -95,15 +104,17 @@ def base_profile(axi, axc, axv, cell, EODf, model_params):
     # integrate the model:
     model_spikes = simulate(stimulus, **model_params)
     model_isi, model_kde, model_rate, model_cv = \
-        baseline_isih(model_spikes, sigma=0.1*eod_period, maxisi=max_eods*eod_period)
-    #model_ctime, model_c rate, model_vs = baseline_vectorstrength(model_spikes, eod_period, sigma=0.05)
-    model_lags, model_corrs = baseline_serialcorr(model_spikes, max_lag=10)
+        baseline_isih(model_spikes, sigma=0.05*eod_period, maxisi=max_eods*eod_period)
+    model_cphase, model_crate, model_vs = baseline_vectorstrength(model_spikes, eod_period, sigma=0.02)
+    model_lags, model_corrs = baseline_serialcorr(model_spikes, max_lag=max_lag)
     # plot isih statistics:
     axi.show_spines('lb')
     for eod in np.arange(1, max_eods, 1):
-        axi.axvline(1000*eod*eod_period, color='gray')
-    axi.fill_between(1000*data_isi, data_kde/1000, alpha=0.5)
-    axi.fill_between(1000*model_isi, model_kde/1000, alpha=0.5)
+        axi.axvline(1000*eod*eod_period, **lsGrid)
+    axi.fill_between(1000*data_isi, data_kde/1000, **fsData)
+    axi.fill_between(1000*model_isi, model_kde/1000, **fsModel)
+    axi.plot(1000*data_isi, data_kde/1000, **lsData)
+    axi.plot(1000*model_isi, model_kde/1000, **lsModel)
     axi.text(0.75, 0.95, f'$r={data_rate:.0f}$Hz',
             transform=axi.transAxes, ha='right')
     axi.text(0.95, 0.95, f'$CV_d={data_cv:.2f}$',
@@ -114,13 +125,25 @@ def base_profile(axi, axc, axv, cell, EODf, model_params):
     axi.set_ylabel('pdf [1/ms]')
     # plot serial correlations:
     axc.show_spines('lb')
-    axc.plot(data_lags, data_corrs, '-o')
-    axc.plot(model_lags, model_corrs, '-o')
+    axc.axhline(0, **lsGrid)
+    axc.plot(data_lags, data_corrs, **lpsData)
+    axc.plot(model_lags, model_corrs, **lpsModel)
+    axc.text(0.95, 0.95, f'$\\rho_d={data_corrs[1]:.2f}$',
+            transform=axc.transAxes, ha='right')
+    axc.text(0.95, 0.85, f'$\\rho_m={model_corrs[1]:.2f}$',
+            transform=axc.transAxes, ha='right')
     axc.set_ylim(-1, 1)
     axc.set_xlabel('lag')
     axc.set_ylabel('correlation')
     # plot vector strength:
-    axv.plot(1000*data_ctime, data_crate)
+    axv.fill_between(data_cphase, data_crate, **fsData)
+    axv.fill_between(model_cphase, model_crate, **fsModel)
+    axv.plot(data_cphase, data_crate, **lsData)
+    axv.plot(model_cphase, model_crate, **lsModel)
+    axv.text(1, 1, f'$VS_d={data_vs:.2f}$',
+            transform=axv.transAxes, ha='right')
+    axv.text(1, 0.9, f'$VS_m={model_vs:.2f}$',
+            transform=axv.transAxes, ha='right')
     
 
 
@@ -135,9 +158,12 @@ def main():
         EODf = model_params.pop('EODf')
         print("cell:", cell)
         fig, axs = plt.subplots(1, 3)
+        pos = axs[2].get_position()
+        axs[2].remove()
+        axs[2] = fig.add_axes(pos, projection='polar')
         base_profile(axs[0], axs[1], axs[2], cell, EODf, model_params)
         plt.show()
-        break
+        #break
     
         """
 
