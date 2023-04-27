@@ -144,10 +144,17 @@ def base_profile(axi, axc, axv, cell, EODf, model_params):
             transform=axv.transAxes, ha='right')
     axv.text(1, 0.9, f'$VS_m={model_vs:.2f}$',
             transform=axv.transAxes, ha='right')
+    axv.set_rlim(0, 1200)
+    axv.set_rorigin(-400)
+    axv.set_xticks_pifracs(4)
+    #axv.set_theta
     
 
 
 def main():
+    plt.rcParams['axes.xmargin'] = 0
+    plt.rcParams['axes.ymargin'] = 0
+    
     # load model parameter:
     parameters = load_models("models.csv")
 
@@ -158,9 +165,7 @@ def main():
         EODf = model_params.pop('EODf')
         print("cell:", cell)
         fig, axs = plt.subplots(1, 3)
-        pos = axs[2].get_position()
-        axs[2].remove()
-        axs[2] = fig.add_axes(pos, projection='polar')
+        axs[2] = axs[2].make_polar()
         base_profile(axs[0], axs[1], axs[2], cell, EODf, model_params)
         plt.show()
         #break
