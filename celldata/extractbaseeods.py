@@ -27,7 +27,7 @@ for cell_path in sorted(glob.glob('2*')):
             data = np.fromfile(sf, np.float32, count=n)
 
     # detect peaks:
-    thresh = std_threshold(data, thresh_fac=3)
+    thresh = std_threshold(data, thresh_fac=2)
     p, _ = detect_peaks(data, thresh)
     eod_times = p/samplerate
 
