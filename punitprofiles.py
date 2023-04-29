@@ -284,25 +284,9 @@ def ficurves(axf, axr, s, cell, EODf, model_params, base_rate):
 def check_baseeod(cell):
     """
     bad EODs:
-    2011-10-25-aa-invivo-1
-    2012-06-27-an-invivo-1
-    2012-07-12-ag-invivo-1  !
-    2012-07-12-ap-invivo-1  !
-    2012-12-21-ai-invivo-1  !
-    2012-12-21-ak-invivo-1  ! 
-    2012-12-21-am-invivo-1  !
-    2013-01-08-aa-invivo-1  !
-    2013-01-08-ab-invivo-1  ! 
-    2013-04-10-aa-invivo-1  !!
-    2013-04-10-ac-invivo-1  !
-    2014-03-25-aa-invivo-1  !!
-    2014-03-25-af-invivo-1  ! 
-    2014-06-06-ac-invivo-1
-    2014-06-06-ag-invivo-1
-    2014-12-03-ai-invivo-1
-    2015-01-15-ab-invivo-1
-    2018-01-10-al
-    2018-06-25-ad-invivo-1
+2014-06-06-ac-invivo-1         CV=0.188
+2014-06-06-ag-invivo-1         CV=0.195
+2018-06-26-ah-invivo-1         CV=0.203
     """
     data_eods = np.load(f'celldata/{cell}/baseline_eods_trial_1.npy')
     fig, ax = plt.subplots()

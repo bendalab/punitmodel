@@ -9,6 +9,7 @@ sys.path.insert(0, os.path.join(sys.path[0], '..'))
 from eods import detect_eods, plot_eod_interval_hist
 
 # select what to do:
+plot_data_trace = False
 plot_data_hist = False
 plot_detection = False
 check_iei_hist = False
@@ -40,6 +41,13 @@ for cell_path in sorted(glob.glob('2*')):
             data = np.fromfile(sf, np.float32, count=n)
 
     # plot histogram or recording:
+    if plot_data_trace:
+        fig, ax = plt.subplots()
+        ax.set_title(cell_path)
+        ax.plot(data)
+        plt.show()
+            
+    # plot histogram or recording:
     if plot_data_hist:
         fig, ax = plt.subplots()
         ax.set_title(cell_path)
@@ -63,11 +71,13 @@ for cell_path in sorted(glob.glob('2*')):
         ax.plot(sub_eods, 1.8*np.ones(len(sub_eods)), 'o')
         plt.show()        
 
-    # report CV of intervals:
+    # report CV and max of intervals:
     if check_cv:
         ieis = np.diff(eod_times)
-        cv = np.std(ieis)/np.mean(ieis)
-        print(f'{cell_path:30} CV={cv:5.3f}')
+        mean = np.mean(ieis)
+        cv = np.std(ieis)/mean
+        max_eod = np.max(ieis)
+        print(f'{cell_path:30} CV={cv:5.3f}  mean={1000*mean:4.1f}ms  max={1000*max_eod:4.1f}ms')
 
     # plot interval histogram:
     if check_iei_hist:
