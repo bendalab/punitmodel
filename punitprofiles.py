@@ -4,6 +4,7 @@ from scipy.stats import gaussian_kde
 import pandas as pd
 import matplotlib.pyplot as plt
 from model import simulate, load_models
+from eods import plot_eod_interval_hist
 import plottools.plottools as pt
 
 
@@ -280,6 +281,36 @@ def ficurves(axf, axr, s, cell, EODf, model_params, base_rate):
     axr.set_ylabel('Spike frequency', 'Hz')
 
 
+def check_baseeod(cell):
+    """
+    bad EODs:
+    2011-10-25-aa-invivo-1
+    2012-06-27-an-invivo-1
+    2012-07-12-ag-invivo-1  !
+    2012-07-12-ap-invivo-1  !
+    2012-12-21-ai-invivo-1  !
+    2012-12-21-ak-invivo-1  ! 
+    2012-12-21-am-invivo-1  !
+    2013-01-08-aa-invivo-1  !
+    2013-01-08-ab-invivo-1  ! 
+    2013-04-10-aa-invivo-1  !!
+    2013-04-10-ac-invivo-1  !
+    2014-03-25-aa-invivo-1  !!
+    2014-03-25-af-invivo-1  ! 
+    2014-06-06-ac-invivo-1
+    2014-06-06-ag-invivo-1
+    2014-12-03-ai-invivo-1
+    2015-01-15-ab-invivo-1
+    2018-01-10-al
+    2018-06-25-ad-invivo-1
+    """
+    data_eods = np.load(f'celldata/{cell}/baseline_eods_trial_1.npy')
+    fig, ax = plt.subplots()
+    ax.set_title(cell)
+    plot_eod_interval_hist(ax, data_eods, max_iei=5)
+    plt.show()
+
+
 def main():
     s = plot_style()
 
@@ -296,6 +327,8 @@ def main():
         cell = model_params.pop('cell')
         EODf = model_params.pop('EODf')
         print("cell:", cell)
+        check_baseeod(cell)
+        continue
         fig, axs = plt.subplots(2, 3, cmsize=(16, 11))
         fig.subplots_adjust(leftm=8, rightm=2, bottomm=3.5, topm=3,
                             wspace=0.8, hspace=0.4)

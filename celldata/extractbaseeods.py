@@ -9,6 +9,8 @@ from thunderfish.dataloader import relacs_samplerate_unit, relacs_metadata
 data_path = 'data'
 
 for cell_path in sorted(glob.glob('2*')):
+    if not os.path.isdir(os.path.join(data_path, cell_path)):
+        continue
     print(cell_path)
     samplerate, _ = relacs_samplerate_unit(os.path.join(data_path, cell_path, 'stimuli.dat'), 1)
     md = relacs_metadata(os.path.join(data_path, cell_path, 'basespikes1.dat'), lower_keys=True, flat=True, add_sections=True)
