@@ -9,13 +9,18 @@ import plottools.plottools as pt
 
 def plot_style():
     class s:
-        data_color = 'tab:blue'
-        model_color = 'tab:red'
-        onset_color = 'tab:green'
-        ss_color = 'tab:red'
-        base_color = 'tab:blue'
+        colors = pt.palettes['muted']
+        data_color = colors['blue']
+        model_color = colors['red']
+        onset_color = colors['green']
+        ss_color = colors['red']
+        base_color = colors['lightblue']
+        poscontrast_color = colors['magenta']
+        negcontrast_color = colors['purple']
+        
         lw = 1.5
         ms = 4
+        
         lsGrid = dict(color='gray', ls=':', lw=0.5)
         lsData = dict(color=data_color, lw=lw)
         lsModel = dict(color=model_color, lw=lw)
@@ -28,10 +33,14 @@ def plot_style():
         lsOnset = dict(ls='-', color=onset_color, lw=lw)
         lsSS = dict(ls='-', color=ss_color, lw=lw)
         lsBase = dict(ls='-', color=base_color, lw=lw)
+
+        lsPosContrast = dict(ls='-', color=poscontrast_color, lw=lw)
+        lsNegContrast = dict(ls='-', color=negcontrast_color, lw=lw)
     pt.axes_params(0, 0, 0, 'none')
     pt.figure_params(format='pdf')
     pt.spines_params('lb')
-    pt.legend_params(fontsize='small')
+    pt.legend_params(fontsize='small', frameon=False,
+                     handlelength=1.2, borderpad=0)
 
     return s
 
@@ -150,7 +159,7 @@ def base_profile(axi, axc, axv, s, cell, EODf, model_params):
     data_lags, data_corrs, data_low, data_high = baseline_serialcorr(data_spikes, max_lag=max_lag)
     # model:
     deltat = model_params["deltat"]
-    time = np.arange(0, 30, deltat)
+    time = np.arange(0, 15, deltat)
     # baseline EOD with amplitude 1:
     stimulus = np.sin(2*np.pi*EODf*time)
     # integrate the model:
@@ -178,16 +187,17 @@ def base_profile(axi, axc, axv, s, cell, EODf, model_params):
     # plot serial correlations:
     axc.axhspan(data_low, data_high, **s.fsData)
     axc.axhline(0, **s.lsGrid)
-    axc.plot(data_lags, data_corrs, **s.lpsData)
-    axc.plot(model_lags, model_corrs, **s.lpsModel)
-    axc.text(1, 0.95, f'$\\rho_d={data_corrs[1]:.2f}$',
+    axc.plot(data_lags, data_corrs, label='data', **s.lpsData)
+    axc.plot(model_lags, model_corrs, label='model', **s.lpsModel)
+    axc.text(1, 0.95, f'$\\rho_{{1,d}}={data_corrs[1]:.2f}$',
             transform=axc.transAxes, ha='right')
-    axc.text(1, 0.83, f'$\\rho_m={model_corrs[1]:.2f}$',
+    axc.text(1, 0.83, f'$\\rho_{{1,m}}={model_corrs[1]:.2f}$',
             transform=axc.transAxes, ha='right')
     axc.set_ylim(-1, 1)
-    axc.set_xlabel('lag')
-    axc.set_ylabel('correlation')
+    axc.set_xlabel('Lag $k$')
+    axc.set_ylabel('Correlation $\\rho_k$')
     axc.set_xticks_delta(5)
+    axc.legend(loc='lower right', markerfirst=False)
     # plot vector strength:
     axv.fill_between(data_cphase, data_crate, **s.fsData)
     axv.fill_between(model_cphase, model_crate, **s.fsModel)
@@ -200,6 +210,7 @@ def base_profile(axi, axc, axv, s, cell, EODf, model_params):
     axv.set_rlim(0, 0.5)
     axv.set_rorigin(-0.1)
     axv.set_xticks_pifracs(4)
+    axv.set_yticks_blank()
     #axv.set_theta
     return data_rate
 
@@ -208,13 +219,15 @@ def ficurves(axf, axr, s, cell, EODf, model_params, base_rate):
     # data:
     data_contrast, data_fonset, data_fss = load_ficurve(f'celldata/{cell}/fi_curve_info.csv')
     # model:
+    plot_contrasts = [-0.2, +0.05, -0.1, +0.1, -0.05, +0.2]
+    plot_rates = [None] * len(plot_contrasts)
     model_contrast = np.arange(-0.3, 0.31, 0.01)
     model_fonset = np.zeros(len(model_contrast))
     model_fss = np.zeros(len(model_contrast))
     for i, contrast in enumerate(model_contrast):
         # generate EOD stimulus with an amplitude step:
         deltat = model_params["deltat"]
-        time = np.arange(-0.2, 0.2, deltat)
+        time = np.arange(-0.4, 0.2, deltat)
         stimulus = np.sin(2*np.pi*EODf*time)
         stimulus[np.argmin(np.abs(time)):] *= (1.0+contrast)
         # integrate the model:
@@ -233,9 +246,9 @@ def ficurves(axf, axr, s, cell, EODf, model_params, base_rate):
         fon = fmax if np.abs(fmax - fss) > np.abs(fmin - fss) else fmin
         model_fonset[i] = fon
         model_fss[i] = fss
-        for c in [-0.2, -0.1, -0.05, 0.05, 0.1, 0.2]:
-            if np.abs(contrast-c) < 1e-3:
-                axr.plot(1000*time, rate, label=f'${100*contrast:.0f}$%')
+        for k in range(len(plot_contrasts)):
+            if np.abs(contrast - plot_contrasts[k]) < 1e-3:
+                plot_rates[k] = rate
         
     # plot ficurves:
     axf.axvline(0, **s.lsGrid)
@@ -251,7 +264,16 @@ def ficurves(axf, axr, s, cell, EODf, model_params, base_rate):
     axf.set_xlabel('Contrast', '%')
     axf.set_ylabel('Spike frequency', 'Hz')
     # plot fi rates:
-    axr.legend(loc='upper left', title='contrast')
+    plot_colors = {+0.20: s.lsPosContrast,
+                   +0.10: pt.lighter(s.lsPosContrast, 0.7),
+                   +0.05: pt.lighter(s.lsPosContrast, 0.4),
+                   -0.05: pt.lighter(s.lsNegContrast, 0.4),
+                   -0.10: pt.lighter(s.lsNegContrast, 0.7),
+                   -0.20: s.lsNegContrast}
+    for contrast, rate in zip(plot_contrasts, plot_rates):
+        axr.plot(1000*time, rate, label=f'${100*contrast:+.0f}$%',
+                 **plot_colors[contrast])
+    axr.legend(ncol=3, loc='upper right', bbox_to_anchor=(1, 1.1))
     axr.set_xlim(-20, 50)
     axr.set_ylim(0, 1200)
     axr.set_xlabel('Time', 'ms')
@@ -277,7 +299,8 @@ def main():
         fig, axs = plt.subplots(2, 3, cmsize=(16, 11))
         fig.subplots_adjust(leftm=8, rightm=2, bottomm=3.5, topm=3,
                             wspace=0.8, hspace=0.4)
-        fig.text(0.5, 0.96, cell, ha='center')
+        fig.text(0.03, 0.96, cell, ha='left')
+        fig.text(0.97, 0.96, f'EOD$f$={EODf:.0f}Hz', ha='right')
         axs[0, 2] = axs[0, 2].make_polar(-0.02, -0.05)
         axr = fig.merge(axs[1,1:3])
         data_rate = 200
@@ -285,7 +308,7 @@ def main():
                                  cell, EODf, model_params)
         ficurves(axs[1, 0], axr, s, cell, EODf, model_params, data_rate)
         fig.savefig(os.path.join(plot_path, cell))
-        fig.close()
+        plt.close(fig)
         #plt.show()
         #break
 
