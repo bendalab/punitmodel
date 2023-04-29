@@ -14,7 +14,7 @@ plot_data_hist = False
 plot_detection = False
 check_iei_hist = False
 check_cv = True
-save_eods = False
+save_eods = True
 
 
 data_path = 'data/'
