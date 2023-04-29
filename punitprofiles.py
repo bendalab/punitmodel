@@ -1,8 +1,39 @@
+import os
 import numpy as np
 from scipy.stats import gaussian_kde
+import pandas as pd
 import matplotlib.pyplot as plt
 from model import simulate, load_models
 import plottools.plottools as pt
+
+
+def plot_style():
+    class s:
+        data_color = 'tab:blue'
+        model_color = 'tab:red'
+        onset_color = 'tab:green'
+        ss_color = 'tab:red'
+        base_color = 'tab:blue'
+        lw = 1.5
+        ms = 4
+        lsGrid = dict(color='gray', ls=':', lw=0.5)
+        lsData = dict(color=data_color, lw=lw)
+        lsModel = dict(color=model_color, lw=lw)
+        lpsData = dict(ls='-', color=data_color, lw=lw, marker='o', ms=ms, clip_on=False)
+        lpsModel = dict(ls='-', color=model_color, lw=lw, marker='o', ms=ms, clip_on=False)
+        fsData = dict(color=data_color, alpha=0.5)
+        fsModel = dict(color=model_color, alpha=0.5)
+        psOnset = dict(ls='none', color=onset_color, marker='o', ms=ms, clip_on=False)
+        psSS = dict(ls='none', color=ss_color, marker='o', ms=ms, clip_on=False)
+        lsOnset = dict(ls='-', color=onset_color, lw=lw)
+        lsSS = dict(ls='-', color=ss_color, lw=lw)
+        lsBase = dict(ls='-', color=base_color, lw=lw)
+    pt.axes_params(0, 0, 0, 'none')
+    pt.figure_params(format='pdf')
+    pt.spines_params('lb')
+    pt.legend_params(fontsize='small')
+
+    return s
 
 
 def baseline_isih(spikes, sigma=1e4, maxisi=0.1):
@@ -68,6 +99,14 @@ def baseline_serialcorr(spikes, max_lag=10):
     low, high = np.quantile(perm_corrs, (0.001, 0.999))
     return lags, corrs, low, high
 
+
+def load_ficurve(file_path):
+    data = pd.read_csv(file_path, index_col=0)
+    contrast = data.contrast.to_numpy()
+    fonset = data.f_zero.to_numpy()
+    fss = data.f_inf.to_numpy()
+    return contrast, fonset, fss
+
     
 def instantaneous_rate(spikes, time):
     """Firing rate as the inverse of the interspike intervals.
@@ -98,16 +137,7 @@ def instantaneous_rate(spikes, time):
     return rate
 
 
-def base_profile(axi, axc, axv, cell, EODf, model_params):
-    data_color = 'tab:blue'
-    model_color = 'tab:red'
-    lsGrid = dict(color='gray', ls=':')
-    lsData = dict(color=data_color, lw=2)
-    lsModel = dict(color=model_color, lw=2)
-    lpsData = dict(ls='-', color=data_color, lw=2, marker='o', ms=8, clip_on=False)
-    lpsModel = dict(ls='-', color=model_color, lw=2, marker='o', ms=8, clip_on=False)
-    fsData = dict(color=data_color, alpha=0.5)
-    fsModel = dict(color=model_color, alpha=0.5)
+def base_profile(axi, axc, axv, s, cell, EODf, model_params):
     max_eods = 15.5
     max_lag = 16
     eod_period = 1/EODf
@@ -130,53 +160,110 @@ def base_profile(axi, axc, axv, cell, EODf, model_params):
     model_cphase, model_crate, model_vs = baseline_vectorstrength(model_spikes, np.arange(0, time[-1] + 2*eod_period, eod_period), sigma=0.02)
     model_lags, model_corrs, model_low, model_high = baseline_serialcorr(model_spikes, max_lag=max_lag)
     # plot isih statistics:
-    axi.show_spines('lb')
     for eod in np.arange(1, max_eods, 1):
-        axi.axvline(1000*eod*eod_period, **lsGrid)
-    axi.fill_between(1000*data_isi, data_kde/1000, **fsData)
-    axi.fill_between(1000*model_isi, model_kde/1000, **fsModel)
-    axi.plot(1000*data_isi, data_kde/1000, **lsData)
-    axi.plot(1000*model_isi, model_kde/1000, **lsModel)
-    axi.text(0.75, 0.95, f'$r={data_rate:.0f}$Hz',
+        axi.axvline(1000*eod*eod_period, **s.lsGrid)
+    axi.fill_between(1000*data_isi, data_kde/1000, **s.fsData)
+    axi.fill_between(1000*model_isi, model_kde/1000, **s.fsModel)
+    axi.plot(1000*data_isi, data_kde/1000, **s.lsData)
+    axi.plot(1000*model_isi, model_kde/1000, **s.lsModel)
+    axi.text(1, 0.95, f'$r={data_rate:.0f}$Hz',
             transform=axi.transAxes, ha='right')
-    axi.text(0.95, 0.95, f'$CV_d={data_cv:.2f}$',
+    axi.text(1, 0.83, f'$CV_d={data_cv:.2f}$',
             transform=axi.transAxes, ha='right')
-    axi.text(0.95, 0.85, f'$CV_m={model_cv:.2f}$',
+    axi.text(1, 0.71, f'$CV_m={model_cv:.2f}$',
             transform=axi.transAxes, ha='right')
-    axi.set_xlabel('ISI [ms]')
-    axi.set_ylabel('pdf [1/ms]')
+    axi.set_xlabel('ISI', 'ms')
+    axi.set_ylabel('pdf', '1/ms')
+    axi.set_xticks_delta(10)
     # plot serial correlations:
-    axc.show_spines('lb')
-    axc.axhspan(data_low, data_high, **fsData)
-    axc.axhline(0, **lsGrid)
-    axc.plot(data_lags, data_corrs, **lpsData)
-    axc.plot(model_lags, model_corrs, **lpsModel)
-    axc.text(0.95, 0.95, f'$\\rho_d={data_corrs[1]:.2f}$',
+    axc.axhspan(data_low, data_high, **s.fsData)
+    axc.axhline(0, **s.lsGrid)
+    axc.plot(data_lags, data_corrs, **s.lpsData)
+    axc.plot(model_lags, model_corrs, **s.lpsModel)
+    axc.text(1, 0.95, f'$\\rho_d={data_corrs[1]:.2f}$',
             transform=axc.transAxes, ha='right')
-    axc.text(0.95, 0.85, f'$\\rho_m={model_corrs[1]:.2f}$',
+    axc.text(1, 0.83, f'$\\rho_m={model_corrs[1]:.2f}$',
             transform=axc.transAxes, ha='right')
     axc.set_ylim(-1, 1)
     axc.set_xlabel('lag')
     axc.set_ylabel('correlation')
+    axc.set_xticks_delta(5)
     # plot vector strength:
-    axv.fill_between(data_cphase, data_crate, **fsData)
-    axv.fill_between(model_cphase, model_crate, **fsModel)
-    axv.plot(data_cphase, data_crate, **lsData)
-    axv.plot(model_cphase, model_crate, **lsModel)
-    axv.text(1, 1, f'$VS_d={data_vs:.2f}$',
-            transform=axv.transAxes, ha='right')
-    axv.text(1, 0.9, f'$VS_m={model_vs:.2f}$',
-            transform=axv.transAxes, ha='right')
+    axv.fill_between(data_cphase, data_crate, **s.fsData)
+    axv.fill_between(model_cphase, model_crate, **s.fsModel)
+    axv.plot(data_cphase, data_crate, **s.lsData)
+    axv.plot(model_cphase, model_crate, **s.lsModel)
+    axc.text(1.9, 0.95, f'$VS_d={data_vs:.2f}$',
+            transform=axc.transAxes, ha='right')
+    axc.text(1.9, 0.83, f'$VS_m={model_vs:.2f}$',
+            transform=axc.transAxes, ha='right')
     axv.set_rlim(0, 0.5)
     axv.set_rorigin(-0.1)
     axv.set_xticks_pifracs(4)
     #axv.set_theta
+    return data_rate
+
     
+def ficurves(axf, axr, s, cell, EODf, model_params, base_rate):
+    # data:
+    data_contrast, data_fonset, data_fss = load_ficurve(f'celldata/{cell}/fi_curve_info.csv')
+    # model:
+    model_contrast = np.arange(-0.3, 0.31, 0.01)
+    model_fonset = np.zeros(len(model_contrast))
+    model_fss = np.zeros(len(model_contrast))
+    for i, contrast in enumerate(model_contrast):
+        # generate EOD stimulus with an amplitude step:
+        deltat = model_params["deltat"]
+        time = np.arange(-0.2, 0.2, deltat)
+        stimulus = np.sin(2*np.pi*EODf*time)
+        stimulus[np.argmin(np.abs(time)):] *= (1.0+contrast)
+        # integrate the model:
+        n = 20
+        rate = np.zeros(len(time))
+        for k in range(n):
+            model_params['v_zero'] = np.random.rand()
+            model_params['a_zero'] += 0.02*model_params['a_zero']*np.random.randn()
+            spikes = simulate(stimulus, **model_params)
+            spikes += time[0]
+            trial_rate = instantaneous_rate(spikes, time)
+            rate += trial_rate/n
+        fss = np.mean(rate[(time > 0.1) & (time < 0.15)])
+        fmax = np.max(rate[(time > 0) & (time < 0.05)])
+        fmin = np.min(rate[(time > 0) & (time < 0.05)])
+        fon = fmax if np.abs(fmax - fss) > np.abs(fmin - fss) else fmin
+        model_fonset[i] = fon
+        model_fss[i] = fss
+        for c in [-0.2, -0.1, -0.05, 0.05, 0.1, 0.2]:
+            if np.abs(contrast-c) < 1e-3:
+                axr.plot(1000*time, rate, label=f'${100*contrast:.0f}$%')
+        
+    # plot ficurves:
+    axf.axvline(0, **s.lsGrid)
+    axf.axhline(EODf, **s.lsGrid)
+    axf.axhline(base_rate, **s.lsBase)
+    axf.plot(100*model_contrast, model_fss, **s.lsSS)
+    axf.plot(100*model_contrast, model_fonset, **s.lsOnset)
+    axf.plot(100*data_contrast, data_fss, **s.psSS)
+    axf.plot(100*data_contrast, data_fonset, **s.psOnset)
+    axf.set_xlim(-30, 30)
+    axf.set_ylim(0, 1200)
+    axf.set_xticks_delta(15)
+    axf.set_xlabel('Contrast', '%')
+    axf.set_ylabel('Spike frequency', 'Hz')
+    # plot fi rates:
+    axr.legend(loc='upper left', title='contrast')
+    axr.set_xlim(-20, 50)
+    axr.set_ylim(0, 1200)
+    axr.set_xlabel('Time', 'ms')
+    axr.set_ylabel('Spike frequency', 'Hz')
 
 
 def main():
-    plt.rcParams['axes.xmargin'] = 0
-    plt.rcParams['axes.ymargin'] = 0
+    s = plot_style()
+
+    plot_path = 'plots'
+    if not os.path.isdir(plot_path):
+        os.mkdir(plot_path)
     
     # load model parameter:
     parameters = load_models("models.csv")
@@ -187,45 +274,21 @@ def main():
         cell = model_params.pop('cell')
         EODf = model_params.pop('EODf')
         print("cell:", cell)
-        fig, axs = plt.subplots(1, 3)
-        axs[2] = axs[2].make_polar()
-        base_profile(axs[0], axs[1], axs[2], cell, EODf, model_params)
-        plt.show()
+        fig, axs = plt.subplots(2, 3, cmsize=(16, 11))
+        fig.subplots_adjust(leftm=8, rightm=2, bottomm=3.5, topm=3,
+                            wspace=0.8, hspace=0.4)
+        fig.text(0.5, 0.96, cell, ha='center')
+        axs[0, 2] = axs[0, 2].make_polar(-0.02, -0.05)
+        axr = fig.merge(axs[1,1:3])
+        data_rate = 200
+        data_rate = base_profile(axs[0, 0], axs[0, 1], axs[0, 2], s,
+                                 cell, EODf, model_params)
+        ficurves(axs[1, 0], axr, s, cell, EODf, model_params, data_rate)
+        fig.savefig(os.path.join(plot_path, cell))
+        fig.close()
+        #plt.show()
         #break
-    
-        """
 
-        # generate EOD-like stimulus with an amplitude step:
-        deltat = model_params["deltat"]
-        stimulus_length = 2.0  # in seconds
-        time = np.arange(0, stimulus_length, deltat)
-        # baseline EOD with amplitude 1:
-        stimulus = np.sin(2*np.pi*EODf*time)
-        # amplitude step with given contrast:
-        t0 = 0.5
-        t1 = 1.5
-        contrast = 0.3
-        stimulus[int(t0//deltat):int(t1//deltat)] *= (1.0+contrast)
-
-        # integrate the model:
-        spikes = simulate(stimulus, **model_params)
-
-        # some analysis and plotting:
-        rate = instantaneous_rate(spikes, time)
-
-        fig, (ax1, ax2) = plt.subplots(2, 1, sharex="col")
-
-        ax1.plot(time, stimulus)
-        ax1.set_title("Stimulus")
-        ax1.set_ylabel("Amplitude in mV")
-
-        ax2.plot(time, rate)
-        ax2.set_title("Model Frequency")
-        ax2.set_ylabel("Frequency in Hz")
-        ax2.set_xlabel("Time in s")
-        plt.show()
-        """
-
-
+        
 if __name__ == '__main__':
     main()
