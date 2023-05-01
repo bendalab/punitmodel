@@ -1,5 +1,6 @@
 import os
 import numpy as np
+from scipy.optimize import curve_fit
 import pandas as pd
 import matplotlib.pyplot as plt
 from model import simulate, load_models
@@ -42,6 +43,8 @@ def plot_style():
         lsOnset = dict(ls='-', color=onset_color, lw=lw)
         lsSS = dict(ls='-', color=ss_color, lw=lw)
         lsBase = dict(ls='-', color=base_color, lw=lw)
+        lsDataLine = dict(color='black', lw=lw, zorder=-10)
+        lsModelLine = dict(color='gray', lw=lw, zorder=-10)
 
         lsPosContrast = dict(ls='-', color=poscontrast_color, lw=lw)
         lsNegContrast = dict(ls='-', color=negcontrast_color, lw=lw)
@@ -87,13 +90,14 @@ def instantaneous_rate(spikes, time):
 def plot_comparison(ax, s, title, error):
     ax.show_spines('r')
     ax.tick_params(axis='both', which='major', labelsize='x-small')
-    ax.text(1, 1.2, title, transform=ax.transAxes, ha='center', fontsize='small')
+    ax.text(0, 1.1, title, transform=ax.transAxes, ha='left', fontsize='small')
     if error < 0.02:
         error = 0.02
     ax.bar(0, 100*np.abs(error), width=1, **s.fsError)
     ax.set_xlim(-0.8, 0.8)
     ax.set_ylim(0.0, 30)
     ax.set_yticks_fixed([0, 20], ['0%', '20%'])
+    plt.setp(ax.get_yticklabels(), rotation=90, va='center')
 
     
 def baseline_data(data_path, cell):
@@ -200,8 +204,10 @@ def plot_baseline(axi, axc, axv, axb, s, EODf,
     axv.set_yticks_blank()
     # comparison:
     plot_comparison(axb[0], s, '$CV$', np.abs(data_cv - model_cv))
-    plot_comparison(axb[1], s, '$\\rho_1$', np.abs(data_corrs[1] - model_corrs[1]))
-    plot_comparison(axb[2], s, '$VS$', np.abs(data_vs - model_vs))
+    axb[0].set_visible(False)
+    plot_comparison(axb[1], s, '$CV$', np.abs(data_cv - model_cv))
+    plot_comparison(axb[2], s, '$\\rho_1$', np.abs(data_corrs[1] - model_corrs[1]))
+    plot_comparison(axb[3], s, '$VS$', np.abs(data_vs - model_vs))
     return data_rate
 
 
@@ -316,6 +322,10 @@ def ficurves(time, rates, ton=0.05, tss0=0.1, tss1=0.05, tbase=0.1):
         fonset[i] = fmax if np.abs(fmax - baseline[i]) > np.abs(fmin - baseline[i]) else fmin
     return fonset, fss, baseline
 
+
+def sigmoid(x, x0, k, ymin, ymax):
+    return ymin + (ymax - ymin)/(1 + np.exp(-k*(x - x0)))
+
     
 def plot_ficurves(ax, axc, s, EODf, data_contrasts, data_fonset, data_fss,
                   model_contrasts, model_fonset, model_fss, base_rate):
@@ -333,15 +343,42 @@ def plot_ficurves(ax, axc, s, EODf, data_contrasts, data_fonset, data_fss,
     ax.set_xticks_delta(15)
     ax.set_xlabel('Contrast', '%')
     ax.set_ylabel('Spike frequency', 'Hz')
-    # comparison:
+    # comparison onset slopes:
+    popt = [0, 0.03*EODf, 0, EODf]    
+    popt, _ = curve_fit(sigmoid, data_contrasts, data_fonset, popt)
+    data_fon_slope = popt[1]/4
+    data_fon_line = sigmoid(model_contrasts, *popt)
+    sel = model_fonset <= 1.1*EODf
+    popt = [0, 0.03*EODf, 0, EODf]    
+    popt, _ = curve_fit(sigmoid, model_contrasts[sel], model_fonset[sel], popt)
+    model_fon_slope = popt[1]/4
+    model_fon_line = sigmoid(model_contrasts, *popt)
+    ax.plot(100*model_contrasts, data_fon_line, **s.lsDataLine)
+    ax.plot(100*model_contrasts, model_fon_line, **s.lsModelLine)
+    plot_comparison(axc[0], s, '$s$', np.abs(model_fon_slope - data_fon_slope)/data_fon_slope)
+    # comparison ss slopes:
+    min_contr = -0.2
+    max_contr = +0.2
+    sel = (data_contrasts >= min_contr) & (data_contrasts < max_contr)
+    data_fss_slope, data_fss_b = np.polyfit(data_contrasts[sel],
+                                           data_fss[sel], deg=1)
+    sel = (model_contrasts >= min_contr) & (model_contrasts <= max_contr)
+    model_fss_slope, model_fss_b = np.polyfit(model_contrasts[sel],
+                                              model_fss[sel], deg=1)
+    data_fss_line = data_fss_slope*model_contrasts[sel] + data_fss_b
+    model_fss_line = model_fss_slope*model_contrasts[sel] + model_fss_b
+    ax.plot(100*model_contrasts[sel], data_fss_line, **s.lsDataLine)
+    ax.plot(100*model_contrasts[sel], model_fss_line, **s.lsModelLine)
+    plot_comparison(axc[2], s, '$s$', np.abs(model_fss_slope - data_fss_slope)/data_fss_slope)
+    # comparison chi squared:
     model_idxs = [np.argmin(np.abs(model_contrasts - data_contrasts[i]))
                   for i in range(len(data_contrasts))]
     chifon = np.sum((data_fonset - model_fonset[model_idxs])**2)
     chifss = np.sum((data_fss - model_fss[model_idxs])**2)
-    normfon = len(data_contrasts)*(EODf/2)**2
-    normfss = len(data_contrasts)*base_rate**2
-    plot_comparison(axc[0], s, '$\chi^2 f_{on}$', chifon/normfon)
-    plot_comparison(axc[1], s, '$\chi^2 f_{ss}$', chifss/normfss)
+    normfon = len(data_contrasts)*(EODf/4)**2
+    normfss = len(data_contrasts)*(base_rate/2)**2
+    plot_comparison(axc[1], s, '$\chi^2 f_{on}$', chifon/normfon)
+    plot_comparison(axc[3], s, '$\chi^2 f_{ss}$', chifss/normfss)
 
     
 def plot_firates(ax, axc, s, contrasts, time, rates):
@@ -407,36 +444,37 @@ def main():
         #continue
 
         # setup figure:
-        fig, axg = plt.subplots(1, 2, cmsize=(16, 11), width_ratios=[42, 1])
-        fig.subplots_adjust(leftm=8, rightm=4, bottomm=3.5, topm=3, wspace=0.07)
+        fig, axg = plt.subplots(1, 2, cmsize=(16, 11), width_ratios=[42, 2])
+        fig.subplots_adjust(leftm=8, rightm=3, bottomm=3.5, topm=3, wspace=0.07)
         fig.text(0.03, 0.96, cell, ha='left')
         fig.text(0.97, 0.96, f'EOD$f$={EODf:.0f}Hz', ha='right')
         axs = axg[0].subplots(2, 3, wspace=0.8, hspace=0.4)
         axs[0, 2] = axs[0, 2].make_polar(-0.02, -0.05)
         axr = fig.merge(axs[1,1:3])
-        axc = axg[1].subplots(5, 1, hspace=0.6)
+        axc = axg[1].subplots(4, 2, hspace=0.6, wspace=0.2)
         
         # baseline:
         data_spikes, data_eods = baseline_data(data_path, cell)
         model_spikes = baseline_model(EODf, model_params, baseline_tmax)
-        data_rate = plot_baseline(axs[0, 0], axs[0, 1], axs[0, 2], axc[0:3], s,
+        data_rate = plot_baseline(axs[0, 0], axs[0, 1], axs[0, 2], axc[0:2,:].ravel(), s,
                                   EODf, data_spikes, data_eods, model_spikes)
         
         # fi curves:
         data_contrasts, data_fonset, data_fss = ficurve_data(data_path, cell)
         time, rates = firate_model(EODf, model_params, model_contrasts)
         model_fonset, model_fss, baseline = ficurves(time, rates)
-        plot_ficurves(axs[1, 0], axc[3:5], s, EODf,
+        plot_ficurves(axs[1, 0], axc[2:4,:].ravel(), s, EODf,
                       data_contrasts, data_fonset, data_fss,
                       model_contrasts, model_fonset, model_fss, data_rate)
         
         # fi rates:
         time, rates = firate_model(EODf, model_params, rate_contrasts)
         plot_firates(axr, None, s, rate_contrasts, time, rates)
-        
-        fig.savefig(os.path.join(plot_path, cell))
-        plt.close(fig)
-        #plt.show()
+
+        fig.common_yspines(axc)
+        #fig.savefig(os.path.join(plot_path, cell))
+        #plt.close(fig)
+        plt.show()
         #break
 
         
