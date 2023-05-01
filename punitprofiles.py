@@ -1,14 +1,21 @@
 import os
 import numpy as np
-from scipy.stats import gaussian_kde
 import pandas as pd
 import matplotlib.pyplot as plt
 from model import simulate, load_models
 from eods import plot_eod_interval_hist
+from baseline import interval_statistics, serial_correlations, vector_strength, cyclic_rate
 import plottools.plottools as pt
 
 
 def plot_style():
+    """ Settings and styles for the plots.
+
+    Returns
+    -------
+    s: namespace
+        Plotting styles (dictionaries with colors, line poperties, etc.).
+    """
     class s:
         colors = pt.palettes['muted']
         data_color = colors['blue']
@@ -45,78 +52,6 @@ def plot_style():
 
     return s
 
-
-def baseline_isih(spikes, sigma=1e4, maxisi=0.1):
-    isis = np.diff(spikes)
-    isi = np.arange(0.0, maxisi, 0.1*sigma)
-    kernel = gaussian_kde(isis, sigma/np.std(isis, ddof=1))
-    kde = kernel(isi)
-    mean_isi = np.mean(isis)
-    std_isi = np.std(isis)
-    rate = 1/mean_isi
-    cv = std_isi / mean_isi
-    return isi, kde, rate, cv
-
-
-def baseline_vectorstrength(spikes, eods, sigma=0.05):
-    phases = np.arange(0, 1.005, 0.005)*2*np.pi
-    rate = np.zeros(len(phases))
-    n = 0
-    vectors = np.zeros(len(spikes), dtype=complex)
-    for i, spike in enumerate(spikes):
-        k = eods.searchsorted(spike) - 1
-        if k + 1 >= len(eods):
-            continue
-        cycle = eods[k]
-        period = eods[k+1] - eods[k]
-        phase = 2*np.pi*(spike - cycle)/period
-        vectors[i] = np.exp(1j*phase)
-        cycle_spikes = np.array([phase - 2*np.pi, phase, phase + 2*np.pi])
-        kernel = gaussian_kde(cycle_spikes, 2*np.pi*sigma/np.std(cycle_spikes, ddof=1))
-        cycle_rate = kernel(phases)
-        """
-        if i == 10:
-            print(np.max(cycle_rate))
-            plt.close('all')
-            plt.plot(phases, cycle_rate)
-            plt.show()
-        """
-        rate += cycle_rate
-        n += 1
-    vs = np.abs(np.mean(vectors))
-    """
-    print(n, np.max(rate/n))
-    plt.close('all')
-    plt.plot(phases, rate/n)
-    plt.show()
-    """
-    return phases, rate/n, vs
-        
-
-def baseline_serialcorr(spikes, max_lag=10):
-    isis = np.diff(spikes)
-    lags = np.arange(0, max_lag, 1)
-    corrs = np.zeros(max_lag)
-    corrs[0] = np.corrcoef(isis, isis)[0,1]
-    for i, lag in enumerate(lags[1:]):
-        corrs[i+1] = np.corrcoef(isis[:-lag], isis[lag:])[0,1]
-    rng = np.random.default_rng()
-    perm_corrs = np.zeros(10000)
-    for k in range(len(perm_corrs)):
-        xisis = rng.permutation(isis)
-        yisis = rng.permutation(isis)
-        perm_corrs[k] = np.corrcoef(xisis, yisis)[0,1]
-    low, high = np.quantile(perm_corrs, (0.001, 0.999))
-    return lags, corrs, low, high
-
-
-def load_ficurve(file_path):
-    data = pd.read_csv(file_path, index_col=0)
-    contrast = data.contrast.to_numpy()
-    fonset = data.f_zero.to_numpy()
-    fss = data.f_inf.to_numpy()
-    return contrast, fonset, fss
-
     
 def instantaneous_rate(spikes, time):
     """Firing rate as the inverse of the interspike intervals.
@@ -147,28 +82,67 @@ def instantaneous_rate(spikes, time):
     return rate
 
 
-def base_profile(axi, axc, axv, s, cell, EODf, model_params):
-    max_eods = 15.5
-    max_lag = 16
-    eod_period = 1/EODf
-    # data:
-    data_spikes = np.load(f'celldata/{cell}/baseline_spikes_trial_1.npy')
-    data_eods = np.load(f'celldata/{cell}/baseline_eods_trial_1.npy')
-    data_isi, data_kde, data_rate, data_cv = \
-        baseline_isih(data_spikes, sigma=0.05*eod_period, maxisi=max_eods*eod_period)
-    data_cphase, data_crate, data_vs = baseline_vectorstrength(data_spikes, data_eods, sigma=0.02)
-    data_lags, data_corrs, data_low, data_high = baseline_serialcorr(data_spikes, max_lag=max_lag)
-    # model:
+def baseline_data(data_path, cell):
+    """ Load baseline spike and EOD events measured in a cell.
+
+    Parameters
+    ----------
+    data_path: str
+         Base path with the cell data folders.
+    cell: str
+         Name of the cell its data folder.
+
+    Returns
+    -------
+    spikes: ndarray of floats
+        Times of spikes.
+    eods: ndarray of floats
+        Times of EOD cacles.
+    """
+    spikes = np.load(os.path.join(data_path, cell, 'baseline_spikes_trial_1.npy'))
+    eods = np.load(os.path.join(data_path, cell, 'baseline_eods_trial_1.npy'))
+    return spikes, eods
+
+
+def baseline_model(EODf, model_params, tmax=10):
+    """ Simulate baseline activity.
+
+    Parameters
+    ----------
+    EODf: float
+        EOD frequency in Hertz
+    model_params: dict
+        Model parameters.
+    tmax: float
+        Time to simulate baseline activity.
+    """
     deltat = model_params["deltat"]
-    time = np.arange(0, 15, deltat)
+    time = np.arange(0, tmax, deltat)
     # baseline EOD with amplitude 1:
     stimulus = np.sin(2*np.pi*EODf*time)
     # integrate the model:
-    model_spikes = simulate(stimulus, **model_params)
+    spikes = simulate(stimulus, **model_params)
+    return spikes
+
+
+def plot_baseline(axi, axc, axv, s, EODf,
+                  data_spikes, data_eods, model_spikes):
+    """ Compute and plot baseline statistics for data and model spikes. """
+    max_eods = 15.5
+    max_lag = 15
+    eod_period = 1/EODf
+    # analyse data:
+    data_isi, data_kde, data_rate, data_cv = \
+        interval_statistics(data_spikes, sigma=0.05*eod_period, maxisi=max_eods*eod_period)
+    data_lags, data_corrs, data_low, data_high = serial_correlations(data_spikes, max_lag=max_lag)
+    data_vs = vector_strength(data_spikes, data_eods)
+    data_cphase, data_crate = cyclic_rate(data_spikes, data_eods, sigma=0.02)
+    # analyse model:
     model_isi, model_kde, model_rate, model_cv = \
-        baseline_isih(model_spikes, sigma=0.05*eod_period, maxisi=max_eods*eod_period)
-    model_cphase, model_crate, model_vs = baseline_vectorstrength(model_spikes, np.arange(0, time[-1] + 2*eod_period, eod_period), sigma=0.02)
-    model_lags, model_corrs, model_low, model_high = baseline_serialcorr(model_spikes, max_lag=max_lag)
+        interval_statistics(model_spikes, sigma=0.05*eod_period, maxisi=max_eods*eod_period)
+    model_lags, model_corrs, model_low, model_high = serial_correlations(model_spikes, max_lag=max_lag)
+    model_vs = vector_strength(model_spikes, eod_period)
+    model_cphase, model_crate = cyclic_rate(model_spikes, eod_period, sigma=0.02)
     # plot isih statistics:
     for eod in np.arange(1, max_eods, 1):
         axi.axvline(1000*eod*eod_period, **s.lsGrid)
@@ -212,23 +186,57 @@ def base_profile(axi, axc, axv, s, cell, EODf, model_params):
     axv.set_rorigin(-0.1)
     axv.set_xticks_pifracs(4)
     axv.set_yticks_blank()
-    #axv.set_theta
     return data_rate
 
-    
-def ficurves(axf, axr, s, cell, EODf, model_params, base_rate):
-    # data:
-    data_contrast, data_fonset, data_fss = load_ficurve(f'celldata/{cell}/fi_curve_info.csv')
-    # model:
-    plot_contrasts = [-0.2, +0.05, -0.1, +0.1, -0.05, +0.2]
-    plot_rates = [None] * len(plot_contrasts)
-    model_contrast = np.arange(-0.3, 0.31, 0.01)
-    model_fonset = np.zeros(len(model_contrast))
-    model_fss = np.zeros(len(model_contrast))
-    for i, contrast in enumerate(model_contrast):
+
+def ficurve_data(data_path, cell):
+    """ Load fI curve data measured in a cell.
+
+    Parameters
+    ----------
+    data_path: str
+         Base path with the cell data folders.
+    cell: str
+         Name of the cell its data folder.
+
+    Returns
+    -------
+    contrasts: ndarray of floats
+        Contrasts of step stimuli.
+    fonset: ndarray of floats
+        Onset spike frequency in Hertz.
+    fss: ndarray of floats
+        Steady-state spike frequncy in Hertz.
+    """
+    file_path = os.path.join(data_path, cell, 'fi_curve_info.csv')
+    data = pd.read_csv(file_path, index_col=0)
+    contrasts = data.contrast.to_numpy()
+    fonset = data.f_zero.to_numpy()
+    fss = data.f_inf.to_numpy()
+    return contrasts, fonset, fss
+
+
+def firate_model(EODf, model_params, contrasts, t0=-0.4, t1=0.2):
+    """ Simulate spike frequencies in response to step stimuli.
+
+    Parameters
+    ----------
+    EODf: float
+        EOD frequency in Hertz
+    model_params: dict
+        Model parameters.
+    contrasts: ndarray of floats
+        Contrasts for which responses are simulated.
+    t0: float
+        Start of simulation before the step in seconds (negative).
+    t1: float
+        End of simulation after the step in seconds.
+    """
+    deltat = model_params["deltat"]
+    time = np.arange(t0, t1, deltat)
+    rates = [None] * len(contrasts)
+    for i, contrast in enumerate(contrasts):
         # generate EOD stimulus with an amplitude step:
-        deltat = model_params["deltat"]
-        time = np.arange(-0.4, 0.2, deltat)
         stimulus = np.sin(2*np.pi*EODf*time)
         stimulus[np.argmin(np.abs(time)):] *= (1.0+contrast)
         # integrate the model:
@@ -241,66 +249,124 @@ def ficurves(axf, axr, s, cell, EODf, model_params, base_rate):
             spikes += time[0]
             trial_rate = instantaneous_rate(spikes, time)
             rate += trial_rate/n
-        fss = np.mean(rate[(time > 0.1) & (time < 0.15)])
-        fmax = np.max(rate[(time > 0) & (time < 0.05)])
-        fmin = np.min(rate[(time > 0) & (time < 0.05)])
-        fon = fmax if np.abs(fmax - fss) > np.abs(fmin - fss) else fmin
-        model_fonset[i] = fon
-        model_fss[i] = fss
-        for k in range(len(plot_contrasts)):
-            if np.abs(contrast - plot_contrasts[k]) < 1e-3:
-                plot_rates[k] = rate
-        
-    # plot ficurves:
-    axf.axvline(0, **s.lsGrid)
-    axf.axhline(EODf, **s.lsGrid)
-    axf.axhline(base_rate, **s.lsBase)
-    axf.plot(100*model_contrast, model_fss, **s.lsSS)
-    axf.plot(100*model_contrast, model_fonset, **s.lsOnset)
-    axf.plot(100*data_contrast, data_fss, **s.psSS)
-    axf.plot(100*data_contrast, data_fonset, **s.psOnset)
-    axf.set_xlim(-30, 30)
-    axf.set_ylim(0, 1200)
-    axf.set_xticks_delta(15)
-    axf.set_xlabel('Contrast', '%')
-    axf.set_ylabel('Spike frequency', 'Hz')
-    # plot fi rates:
-    plot_colors = {+0.20: s.lsPosContrast,
-                   +0.10: pt.lighter(s.lsPosContrast, 0.7),
-                   +0.05: pt.lighter(s.lsPosContrast, 0.4),
-                   -0.05: pt.lighter(s.lsNegContrast, 0.4),
-                   -0.10: pt.lighter(s.lsNegContrast, 0.7),
-                   -0.20: s.lsNegContrast}
-    for contrast, rate in zip(plot_contrasts, plot_rates):
-        axr.plot(1000*time, rate, label=f'${100*contrast:+.0f}$%',
-                 **plot_colors[contrast])
-    axr.legend(ncol=3, loc='upper right', bbox_to_anchor=(1, 1.1))
-    axr.set_xlim(-20, 50)
-    axr.set_ylim(0, 1200)
-    axr.set_xlabel('Time', 'ms')
-    axr.set_ylabel('Spike frequency', 'Hz')
+        rates[i] = rate
+    return time, rates
 
 
-def check_baseeod(cell):
+def ficurves(time, rates, ton=0.05, tss0=0.1, tss1=0.05, tbase=0.1):
+    """ Extract onset and steady-state firing rates from step responses.
+
+    The step stimuli start at time 0 and extend to the end of `time`.
+
+    Parameters
+    ----------
+    time: ndarray of floats
+        Time points of firing rate estimates in `rates`.
+        Can be less than the arrays in `rates`.
+    rates: list of ndarrays of floats
+        Firing rate estimates to be analysed.
+    ton: float
+        Time interval right after stimulus onset in which to look
+        for the onset rate.
+    tss0: float
+        Start time before stimulus end for estimating steady-state response.
+    tss1: float
+        End time before stimulus end for estimating steady-state response.
+    tbase: float
+        Time interval right before stimulus onset for estimating baseline rate.
+
+    Returns
+    -------
+    fonset: ndarray of floats
+        For each response in `rates`, the maximum deviation from
+        the baseline rate after stimulus onset.
+    fss: ndarray of floats
+        For each response in `rates`, the steady-state firing rate
+        during the end of the step stimulus, between `tss0` and `tss1`
+        before stimulus end.
+    baseline: ndarray of floats
+        For each response in `rates`, the firing rate during `tbase`
+        before the step stimulus.
     """
-    bad EODs:
-2014-06-06-ac-invivo-1         CV=0.188
-2014-06-06-ag-invivo-1         CV=0.195
-2018-06-26-ah-invivo-1         CV=0.203
+    baseline = np.zeros(len(rates))
+    fonset = np.zeros(len(rates))
+    fss = np.zeros(len(rates))
+    for i in range(len(rates)):
+        rate = rates[i][:len(time)]
+        baseline[i] = np.mean(rate[(time > -tbase) & (time < 0)])
+        fss[i] = np.mean(rate[(time > time[-1] - tss0) & (time < time[-1] - tss1)])
+        fmax = np.max(rate[(time > 0) & (time < ton)])
+        fmin = np.min(rate[(time > 0) & (time < ton)])
+        fonset[i] = fmax if np.abs(fmax - baseline[i]) > np.abs(fmin - baseline[i]) else fmin
+    return fonset, fss, baseline
+
+    
+def plot_ficurves(ax, s, EODf, data_contrasts, data_fonset, data_fss,
+                  model_contrasts, model_fonset, model_fss, base_rate):
+    """ Plot fI curves. """
+    ax.axvline(0, **s.lsGrid)
+    ax.axhline(EODf, **s.lsGrid)
+    ax.axhline(base_rate, **s.lsBase)
+    ax.plot(100*model_contrasts, model_fss, **s.lsSS)
+    ax.plot(100*model_contrasts, model_fonset, **s.lsOnset)
+    sel = (data_contrasts >= model_contrasts[0]) & (data_contrasts <= model_contrasts[-1])
+    ax.plot(100*data_contrasts[sel], data_fss[sel], **s.psSS)
+    ax.plot(100*data_contrasts[sel], data_fonset[sel], **s.psOnset)
+    ax.set_xlim(100*model_contrasts[0], 100*model_contrasts[-1])
+    ax.set_ylim(0, 1200)
+    ax.set_xticks_delta(15)
+    ax.set_xlabel('Contrast', '%')
+    ax.set_ylabel('Spike frequency', 'Hz')
+
+    
+def plot_firates(ax, s, contrasts, time, rates):
+    """ Plot a few selected firng rates in response to step stimuli. """
+    for contrast, rate, color in zip(contrasts, rates, s.rate_colors):
+        ax.plot(1000*time, rate, label=f'${100*contrast:+.0f}$%', **color)
+    ax.legend(ncol=3, loc='upper right', bbox_to_anchor=(1, 1.1))
+    ax.set_xlim(-20, 50)
+    ax.set_ylim(0, 1200)
+    ax.set_xlabel('Time', 'ms')
+    ax.set_ylabel('Spike frequency', 'Hz')
+
+
+def check_baseeod(data_path, cell):
     """
-    data_eods = np.load(f'celldata/{cell}/baseline_eods_trial_1.npy')
+    bad EODs (clipped EOD trace!)
+    2012-06-27-ah-invivo-1 
+
+    bad EODs (big chirps!!!):
+    2014-06-06-ac-invivo-1         CV=0.188
+    2014-06-06-ag-invivo-1         CV=0.195
+    2018-06-25-ad-invivo-1         many small chirps
+    2018-06-26-ah-invivo-1         CV=0.203   many big chirps
+    """
+    data_eods = np.load(os.path.join(data_path, cell, 'baseline_eods_trial_1.npy'))
     fig, ax = plt.subplots()
     ax.set_title(cell)
-    plot_eod_interval_hist(ax, data_eods, max_iei=5)
+    rate = 1/np.diff(data_eods)
+    ax.plot(data_eods[:-1], rate)
+    #plot_eod_interval_hist(ax, data_eods, max_iei=5)
     plt.show()
 
 
 def main():
     s = plot_style()
 
+    data_path = 'celldata'
     plot_path = 'plots'
     if not os.path.isdir(plot_path):
         os.mkdir(plot_path)
+
+    baseline_tmax = 15 # seconds
+    model_contrasts = np.arange(-0.3, 0.31, 0.01)
+    rate_contrasts = [-0.2, +0.05, -0.1, +0.1, -0.05, +0.2]
+    s.rate_colors = [s.lsNegContrast,
+                     pt.lighter(s.lsPosContrast, 0.4),
+                     pt.lighter(s.lsNegContrast, 0.7),
+                     pt.lighter(s.lsPosContrast, 0.7),
+                     pt.lighter(s.lsNegContrast, 0.4),
+                     s.lsPosContrast]
     
     # load model parameter:
     parameters = load_models("models.csv")
@@ -311,8 +377,8 @@ def main():
         cell = model_params.pop('cell')
         EODf = model_params.pop('EODf')
         print("cell:", cell)
-        check_baseeod(cell)
-        continue
+        #check_baseeod(data_path, cell)
+        #continue
         fig, axs = plt.subplots(2, 3, cmsize=(16, 11))
         fig.subplots_adjust(leftm=8, rightm=2, bottomm=3.5, topm=3,
                             wspace=0.8, hspace=0.4)
@@ -320,13 +386,24 @@ def main():
         fig.text(0.97, 0.96, f'EOD$f$={EODf:.0f}Hz', ha='right')
         axs[0, 2] = axs[0, 2].make_polar(-0.02, -0.05)
         axr = fig.merge(axs[1,1:3])
+        # baseline:
+        data_spikes, data_eods = baseline_data(data_path, cell)
+        model_spikes = baseline_model(EODf, model_params, baseline_tmax)
         data_rate = 200
-        data_rate = base_profile(axs[0, 0], axs[0, 1], axs[0, 2], s,
-                                 cell, EODf, model_params)
-        ficurves(axs[1, 0], axr, s, cell, EODf, model_params, data_rate)
-        fig.savefig(os.path.join(plot_path, cell))
-        plt.close(fig)
-        #plt.show()
+        data_rate = plot_baseline(axs[0, 0], axs[0, 1], axs[0, 2], s, EODf,
+                                  data_spikes, data_eods, model_spikes)
+        # fi curves:
+        data_contrasts, data_fonset, data_fss = ficurve_data(data_path, cell)
+        time, rates = firate_model(EODf, model_params, model_contrasts)
+        model_fonset, model_fss, baseline = ficurves(time, rates)
+        plot_ficurves(axs[1, 0], s, EODf, data_contrasts, data_fonset, data_fss,
+                      model_contrasts, model_fonset, model_fss, data_rate)
+        # fi rates:
+        time, rates = firate_model(EODf, model_params, rate_contrasts)
+        plot_firates(axr, s, rate_contrasts, time, rates)
+        #fig.savefig(os.path.join(plot_path, cell))
+        #plt.close(fig)
+        plt.show()
         #break
 
         
