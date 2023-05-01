@@ -23,6 +23,7 @@ def plot_style():
         onset_color = colors['green']
         ss_color = colors['red']
         base_color = colors['lightblue']
+        error_color = colors['red']
         poscontrast_color = colors['magenta']
         negcontrast_color = colors['purple']
         
@@ -32,8 +33,8 @@ def plot_style():
         lsGrid = dict(color='gray', ls=':', lw=0.5)
         lsData = dict(color=data_color, lw=lw)
         lsModel = dict(color=model_color, lw=lw)
-        lpsData = dict(ls='-', color=data_color, lw=lw, marker='o', ms=ms, clip_on=False)
-        lpsModel = dict(ls='-', color=model_color, lw=lw, marker='o', ms=ms, clip_on=False)
+        lpsData = dict(color=data_color, ls='-', lw=lw, marker='o', ms=ms, clip_on=False)
+        lpsModel = dict(color=model_color, ls='-', lw=lw, marker='o', ms=ms, clip_on=False)
         fsData = dict(color=data_color, alpha=0.5)
         fsModel = dict(color=model_color, alpha=0.5)
         psOnset = dict(ls='none', color=onset_color, marker='o', ms=ms, clip_on=False)
@@ -44,6 +45,7 @@ def plot_style():
 
         lsPosContrast = dict(ls='-', color=poscontrast_color, lw=lw)
         lsNegContrast = dict(ls='-', color=negcontrast_color, lw=lw)
+        fsError = dict(color=error_color, alpha=1)
     pt.axes_params(0, 0, 0, 'none')
     pt.figure_params(format='pdf')
     pt.spines_params('lb')
@@ -82,6 +84,18 @@ def instantaneous_rate(spikes, time):
     return rate
 
 
+def plot_comparison(ax, s, title, error):
+    ax.show_spines('r')
+    ax.tick_params(axis='both', which='major', labelsize='x-small')
+    ax.text(1, 1.2, title, transform=ax.transAxes, ha='center', fontsize='small')
+    if error < 0.02:
+        error = 0.02
+    ax.bar(0, 100*np.abs(error), width=1, **s.fsError)
+    ax.set_xlim(-0.8, 0.8)
+    ax.set_ylim(0.0, 30)
+    ax.set_yticks_fixed([0, 20], ['0%', '20%'])
+
+    
 def baseline_data(data_path, cell):
     """ Load baseline spike and EOD events measured in a cell.
 
@@ -125,7 +139,7 @@ def baseline_model(EODf, model_params, tmax=10):
     return spikes
 
 
-def plot_baseline(axi, axc, axv, s, EODf,
+def plot_baseline(axi, axc, axv, axb, s, EODf,
                   data_spikes, data_eods, model_spikes, max_eods=15.5, max_lag=15):
     """ Compute and plot baseline statistics for data and model spikes. """
     eod_period = 1/EODf
@@ -181,9 +195,13 @@ def plot_baseline(axi, axc, axv, s, EODf,
     axc.text(1.9, 0.83, f'$VS_m={model_vs:.2f}$',
             transform=axc.transAxes, ha='right')
     axv.set_rlim(0, 0.5)
-    axv.set_rorigin(-0.1)
+    axv.set_rorigin(-0.2)
     axv.set_xticks_pifracs(4)
     axv.set_yticks_blank()
+    # comparison:
+    plot_comparison(axb[0], s, '$CV$', np.abs(data_cv - model_cv))
+    plot_comparison(axb[1], s, '$\\rho_1$', np.abs(data_corrs[1] - model_corrs[1]))
+    plot_comparison(axb[2], s, '$VS$', np.abs(data_vs - model_vs))
     return data_rate
 
 
@@ -299,7 +317,7 @@ def ficurves(time, rates, ton=0.05, tss0=0.1, tss1=0.05, tbase=0.1):
     return fonset, fss, baseline
 
     
-def plot_ficurves(ax, s, EODf, data_contrasts, data_fonset, data_fss,
+def plot_ficurves(ax, axc, s, EODf, data_contrasts, data_fonset, data_fss,
                   model_contrasts, model_fonset, model_fss, base_rate):
     """ Plot fI curves. """
     ax.axvline(0, **s.lsGrid)
@@ -315,9 +333,18 @@ def plot_ficurves(ax, s, EODf, data_contrasts, data_fonset, data_fss,
     ax.set_xticks_delta(15)
     ax.set_xlabel('Contrast', '%')
     ax.set_ylabel('Spike frequency', 'Hz')
+    # comparison:
+    model_idxs = [np.argmin(np.abs(model_contrasts - data_contrasts[i]))
+                  for i in range(len(data_contrasts))]
+    chifon = np.sum((data_fonset - model_fonset[model_idxs])**2)
+    chifss = np.sum((data_fss - model_fss[model_idxs])**2)
+    normfon = len(data_contrasts)*(EODf/2)**2
+    normfss = len(data_contrasts)*base_rate**2
+    plot_comparison(axc[0], s, '$\chi^2 f_{on}$', chifon/normfon)
+    plot_comparison(axc[1], s, '$\chi^2 f_{ss}$', chifss/normfss)
 
     
-def plot_firates(ax, s, contrasts, time, rates):
+def plot_firates(ax, axc, s, contrasts, time, rates):
     """ Plot a few selected firng rates in response to step stimuli. """
     for contrast, rate, color in zip(contrasts, rates, s.rate_colors):
         ax.plot(1000*time, rate, label=f'${100*contrast:+.0f}$%', **color)
@@ -326,6 +353,7 @@ def plot_firates(ax, s, contrasts, time, rates):
     ax.set_ylim(0, 1200)
     ax.set_xlabel('Time', 'ms')
     ax.set_ylabel('Spike frequency', 'Hz')
+    #plot_comparison(axc, s, '$\chi^2$', 0.1)
 
 
 def check_baseeod(data_path, cell):
@@ -379,34 +407,36 @@ def main():
         #continue
 
         # setup figure:
-        fig, axs = plt.subplots(2, 3, cmsize=(16, 11))
-        fig.subplots_adjust(leftm=8, rightm=2, bottomm=3.5, topm=3,
-                            wspace=0.8, hspace=0.4)
+        fig, axg = plt.subplots(1, 2, cmsize=(16, 11), width_ratios=[42, 1])
+        fig.subplots_adjust(leftm=8, rightm=4, bottomm=3.5, topm=3, wspace=0.07)
         fig.text(0.03, 0.96, cell, ha='left')
         fig.text(0.97, 0.96, f'EOD$f$={EODf:.0f}Hz', ha='right')
+        axs = axg[0].subplots(2, 3, wspace=0.8, hspace=0.4)
         axs[0, 2] = axs[0, 2].make_polar(-0.02, -0.05)
         axr = fig.merge(axs[1,1:3])
+        axc = axg[1].subplots(5, 1, hspace=0.6)
         
         # baseline:
         data_spikes, data_eods = baseline_data(data_path, cell)
         model_spikes = baseline_model(EODf, model_params, baseline_tmax)
-        data_rate = plot_baseline(axs[0, 0], axs[0, 1], axs[0, 2], s, EODf,
-                                  data_spikes, data_eods, model_spikes)
+        data_rate = plot_baseline(axs[0, 0], axs[0, 1], axs[0, 2], axc[0:3], s,
+                                  EODf, data_spikes, data_eods, model_spikes)
         
         # fi curves:
         data_contrasts, data_fonset, data_fss = ficurve_data(data_path, cell)
         time, rates = firate_model(EODf, model_params, model_contrasts)
         model_fonset, model_fss, baseline = ficurves(time, rates)
-        plot_ficurves(axs[1, 0], s, EODf, data_contrasts, data_fonset, data_fss,
+        plot_ficurves(axs[1, 0], axc[3:5], s, EODf,
+                      data_contrasts, data_fonset, data_fss,
                       model_contrasts, model_fonset, model_fss, data_rate)
         
         # fi rates:
         time, rates = firate_model(EODf, model_params, rate_contrasts)
-        plot_firates(axr, s, rate_contrasts, time, rates)
+        plot_firates(axr, None, s, rate_contrasts, time, rates)
         
-        #fig.savefig(os.path.join(plot_path, cell))
-        #plt.close(fig)
-        plt.show()
+        fig.savefig(os.path.join(plot_path, cell))
+        plt.close(fig)
+        #plt.show()
         #break
 
         
