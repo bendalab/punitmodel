@@ -231,7 +231,7 @@ def ficurve_data(data_path, cell):
         Steady-state spike frequncy in Hertz.
     """
     file_path = os.path.join(data_path, cell, 'fi_curve_info.csv')
-    data = pd.read_csv(file_path, index_col=0)
+    data = pd.read_csv(file_path, index_col=0, comment='#')
     contrasts = data.contrast.to_numpy()
     fonset = data.f_zero.to_numpy()
     fss = data.f_inf.to_numpy()
@@ -323,8 +323,8 @@ def ficurves(time, rates, ton=0.05, tss0=0.1, tss1=0.05, tbase=0.1):
     return fonset, fss, baseline
 
 
-def sigmoid(x, x0, k, ymin, ymax):
-    return ymin + (ymax - ymin)/(1 + np.exp(-k*(x - x0)))
+def sigmoid(x, x0, k, ymax):
+    return ymax/(1 + np.exp(-k*(x - x0)))
 
     
 def plot_ficurves(ax, axc, s, EODf, data_contrasts, data_fonset, data_fss,
@@ -344,15 +344,25 @@ def plot_ficurves(ax, axc, s, EODf, data_contrasts, data_fonset, data_fss,
     ax.set_xlabel('Contrast', '%')
     ax.set_ylabel('Spike frequency', 'Hz')
     # comparison onset slopes:
-    popt = [0, 0.03*EODf, 0, EODf]    
-    popt, _ = curve_fit(sigmoid, data_contrasts, data_fonset, popt)
-    data_fon_slope = popt[1]/4
-    data_fon_line = sigmoid(model_contrasts, *popt)
+    popt = [0.05, 0.03*EODf, EODf]
+    try:
+        popt, _ = curve_fit(sigmoid, data_contrasts, data_fonset, popt)
+        data_fon_slope = popt[1]/4
+        data_fon_line = sigmoid(model_contrasts, *popt)
+    except RuntimeError:
+        data_fon_slope, data_fon_b = np.polyfit(data_contrasts,
+                                                data_fonset, deg=1)
+        data_fon_line = data_fon_slope*model_contrasts + data_fon_b
     sel = model_fonset <= 1.1*EODf
-    popt = [0, 0.03*EODf, 0, EODf]    
-    popt, _ = curve_fit(sigmoid, model_contrasts[sel], model_fonset[sel], popt)
-    model_fon_slope = popt[1]/4
-    model_fon_line = sigmoid(model_contrasts, *popt)
+    popt = [0, 0.03*EODf, EODf]    
+    try:
+        popt, _ = curve_fit(sigmoid, model_contrasts[sel], model_fonset[sel], popt)
+        model_fon_slope = popt[1]/4
+        model_fon_line = sigmoid(model_contrasts, *popt)
+    except RuntimeError:
+        model_fon_slope, model_fon_b = np.polyfit(model_contrasts[sel],
+                                                  model_fonset[sel], deg=1)
+        model_fon_line = model_fon_slope*model_contrasts + model_fon_b
     ax.plot(100*model_contrasts, data_fon_line, **s.lsDataLine)
     ax.plot(100*model_contrasts, model_fon_line, **s.lsModelLine)
     plot_comparison(axc[0], s, '$s$', np.abs(model_fon_slope - data_fon_slope)/data_fon_slope)
@@ -435,11 +445,12 @@ def main():
     parameters = load_models("models.csv")
 
     # loop over model cells:
-    for example_cell_idx in range(len(parameters)):
-        model_params = parameters[example_cell_idx]
+    for cell_idx in range(len(parameters)):
+    #for cell_idx in [58]:
+        model_params = parameters[cell_idx]
         cell = model_params.pop('cell')
         EODf = model_params.pop('EODf')
-        print("cell:", cell)
+        print(f'cell {cell_idx:3d}: {cell}')
         #check_baseeod(data_path, cell)
         #continue
 
@@ -472,9 +483,9 @@ def main():
         plot_firates(axr, None, s, rate_contrasts, time, rates)
 
         fig.common_yspines(axc)
-        #fig.savefig(os.path.join(plot_path, cell))
-        #plt.close(fig)
-        plt.show()
+        fig.savefig(os.path.join(plot_path, cell))
+        plt.close(fig)
+        #plt.show()
         #break
 
         
