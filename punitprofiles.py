@@ -126,10 +126,8 @@ def baseline_model(EODf, model_params, tmax=10):
 
 
 def plot_baseline(axi, axc, axv, s, EODf,
-                  data_spikes, data_eods, model_spikes):
+                  data_spikes, data_eods, model_spikes, max_eods=15.5, max_lag=15):
     """ Compute and plot baseline statistics for data and model spikes. """
-    max_eods = 15.5
-    max_lag = 15
     eod_period = 1/EODf
     # analyse data:
     data_isi, data_kde, data_rate, data_cv = \
@@ -371,14 +369,16 @@ def main():
     # load model parameter:
     parameters = load_models("models.csv")
 
+    # loop over model cells:
     for example_cell_idx in range(len(parameters)):
-
         model_params = parameters[example_cell_idx]
         cell = model_params.pop('cell')
         EODf = model_params.pop('EODf')
         print("cell:", cell)
         #check_baseeod(data_path, cell)
         #continue
+
+        # setup figure:
         fig, axs = plt.subplots(2, 3, cmsize=(16, 11))
         fig.subplots_adjust(leftm=8, rightm=2, bottomm=3.5, topm=3,
                             wspace=0.8, hspace=0.4)
@@ -386,21 +386,24 @@ def main():
         fig.text(0.97, 0.96, f'EOD$f$={EODf:.0f}Hz', ha='right')
         axs[0, 2] = axs[0, 2].make_polar(-0.02, -0.05)
         axr = fig.merge(axs[1,1:3])
+        
         # baseline:
         data_spikes, data_eods = baseline_data(data_path, cell)
         model_spikes = baseline_model(EODf, model_params, baseline_tmax)
-        data_rate = 200
         data_rate = plot_baseline(axs[0, 0], axs[0, 1], axs[0, 2], s, EODf,
                                   data_spikes, data_eods, model_spikes)
+        
         # fi curves:
         data_contrasts, data_fonset, data_fss = ficurve_data(data_path, cell)
         time, rates = firate_model(EODf, model_params, model_contrasts)
         model_fonset, model_fss, baseline = ficurves(time, rates)
         plot_ficurves(axs[1, 0], s, EODf, data_contrasts, data_fonset, data_fss,
                       model_contrasts, model_fonset, model_fss, data_rate)
+        
         # fi rates:
         time, rates = firate_model(EODf, model_params, rate_contrasts)
         plot_firates(axr, s, rate_contrasts, time, rates)
+        
         #fig.savefig(os.path.join(plot_path, cell))
         #plt.close(fig)
         plt.show()
