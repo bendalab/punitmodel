@@ -15,7 +15,7 @@ def plot_style():
     Returns
     -------
     s: namespace
-        Plotting styles (dictionaries with colors, line poperties, etc.).
+        Plotting styles (dictionaries with colors, line poperties, ...).
     """
     class s:
         colors = pt.palettes['muted']
@@ -54,7 +54,6 @@ def plot_style():
     pt.spines_params('lb')
     pt.legend_params(fontsize='small', frameon=False,
                      handlelength=1.2, borderpad=0)
-
     return s
 
     
@@ -143,8 +142,8 @@ def baseline_model(EODf, model_params, tmax=10):
     return spikes
 
 
-def plot_baseline(axi, axc, axv, axb, s, EODf,
-                  data_spikes, data_eods, model_spikes, max_eods=15.5, max_lag=15):
+def analyse_baseline(EODf, data_spikes, data_eods, model_spikes,
+                     data={}, model={}, max_eods=15.5, max_lag=15):
     """ Compute and plot baseline statistics for data and model spikes. """
     eod_period = 1/EODf
     # analyse data:
@@ -159,30 +158,58 @@ def plot_baseline(axi, axc, axv, axb, s, EODf,
     model_lags, model_corrs, model_low, model_high = serial_correlations(model_spikes, max_lag=max_lag)
     model_vs = vector_strength(model_spikes, eod_period)
     model_cphase, model_crate = cyclic_rate(model_spikes, eod_period, sigma=0.02)
+    data['isis'] = data_isi
+    data['hist'] = data_kde
+    data['rate'] = data_rate
+    data['CV'] = data_cv
+    data['lags'] = data_lags
+    data['corrs'] = data_corrs
+    data['corrs_low'] = data_low
+    data['corrs_high'] = data_high
+    data['vectorstrength'] = data_vs
+    data['cyclic_phases'] = data_cphase
+    data['cyclic_rates'] = data_crate
+    model['isis'] = model_isi
+    model['hist'] = model_kde
+    model['rate'] = model_rate
+    model['CV'] = model_cv
+    model['lags'] = model_lags
+    model['corrs'] = model_corrs
+    model['corrs_low'] = model_low
+    model['corrs_high'] = model_high
+    model['vectorstrength'] = model_vs
+    model['cyclic_phases'] = model_cphase
+    model['cyclic_rates'] = model_crate
+    return data, model
+
+    
+def plot_baseline(axi, axc, axv, axb, s, EODf, data, model):
+    """ Compute and plot baseline statistics for data and model spikes. """
+    eod_period = 1/EODf
     # plot isih statistics:
-    for eod in np.arange(1, max_eods, 1):
+    for eod in np.arange(1, int(data['isis'][-1]/eod_period), 1):
         axi.axvline(1000*eod*eod_period, **s.lsGrid)
-    axi.fill_between(1000*data_isi, data_kde/1000, **s.fsData)
-    axi.fill_between(1000*model_isi, model_kde/1000, **s.fsModel)
-    axi.plot(1000*data_isi, data_kde/1000, **s.lsData)
-    axi.plot(1000*model_isi, model_kde/1000, **s.lsModel)
-    axi.text(1, 0.95, f'$r={data_rate:.0f}$Hz',
+    axi.fill_between(1000*data['isis'], data['hist']/1000, **s.fsData)
+    axi.fill_between(1000*model['isis'], model['hist']/1000, **s.fsModel)
+    axi.plot(1000*data['isis'], data['hist']/1000, **s.lsData)
+    axi.plot(1000*model['isis'], model['hist']/1000, **s.lsModel)
+    axi.text(1, 0.95, f'$r={data["rate"]:.0f}$Hz',
             transform=axi.transAxes, ha='right')
-    axi.text(1, 0.83, f'$CV_d={data_cv:.2f}$',
+    axi.text(1, 0.83, f'$CV^{{(d)}}={data["CV"]:.2f}$',
             transform=axi.transAxes, ha='right')
-    axi.text(1, 0.71, f'$CV_m={model_cv:.2f}$',
+    axi.text(1, 0.71, f'$CV^{{(m)}}={model["CV"]:.2f}$',
             transform=axi.transAxes, ha='right')
     axi.set_xlabel('ISI', 'ms')
     axi.set_ylabel('pdf', '1/ms')
     axi.set_xticks_delta(10)
     # plot serial correlations:
-    axc.axhspan(data_low, data_high, **s.fsData)
+    axc.axhspan(data['corrs_low'], data['corrs_high'], **s.fsData)
     axc.axhline(0, **s.lsGrid)
-    axc.plot(data_lags, data_corrs, label='data', **s.lpsData)
-    axc.plot(model_lags, model_corrs, label='model', **s.lpsModel)
-    axc.text(1, 0.95, f'$\\rho_{{1,d}}={data_corrs[1]:.2f}$',
+    axc.plot(data['lags'], data['corrs'], label='data', **s.lpsData)
+    axc.plot(model['lags'], model['corrs'], label='model', **s.lpsModel)
+    axc.text(1, 0.95, f'$\\rho^{{(d)}}_1={data["corrs"][1]:.2f}$',
             transform=axc.transAxes, ha='right')
-    axc.text(1, 0.83, f'$\\rho_{{1,m}}={model_corrs[1]:.2f}$',
+    axc.text(1, 0.83, f'$\\rho^{{(m)}}_1={model["corrs"][1]:.2f}$',
             transform=axc.transAxes, ha='right')
     axc.set_ylim(-1, 1)
     axc.set_xlabel('Lag $k$')
@@ -190,25 +217,24 @@ def plot_baseline(axi, axc, axv, axb, s, EODf,
     axc.set_xticks_delta(5)
     axc.legend(loc='lower right', markerfirst=False)
     # plot vector strength:
-    axv.fill_between(data_cphase, data_crate, **s.fsData)
-    axv.fill_between(model_cphase, model_crate, **s.fsModel)
-    axv.plot(data_cphase, data_crate, **s.lsData)
-    axv.plot(model_cphase, model_crate, **s.lsModel)
-    axc.text(1.9, 0.95, f'$VS_d={data_vs:.2f}$',
+    axv.fill_between(data['cyclic_phases'], data['cyclic_rates'], **s.fsData)
+    axv.fill_between(model['cyclic_phases'], model['cyclic_rates'], **s.fsModel)
+    axv.plot(data['cyclic_phases'], data['cyclic_rates'], **s.lsData)
+    axv.plot(model['cyclic_phases'], model['cyclic_rates'], **s.lsModel)
+    axc.text(1.9, 0.95, f'$VS^{{(d)}}={data["vectorstrength"]:.2f}$',
             transform=axc.transAxes, ha='right')
-    axc.text(1.9, 0.83, f'$VS_m={model_vs:.2f}$',
+    axc.text(1.9, 0.83, f'$VS^{{(m)}}={model["vectorstrength"]:.2f}$',
             transform=axc.transAxes, ha='right')
     axv.set_rlim(0, 0.5)
     axv.set_rorigin(-0.2)
     axv.set_xticks_pifracs(4)
     axv.set_yticks_blank()
     # comparison:
-    plot_comparison(axb[0], s, '$CV$', np.abs(data_cv - model_cv))
+    plot_comparison(axb[0], s, '$CV$', np.abs(data['CV'] - model['CV']))
     axb[0].set_visible(False)
-    plot_comparison(axb[1], s, '$CV$', np.abs(data_cv - model_cv))
-    plot_comparison(axb[2], s, '$\\rho_1$', np.abs(data_corrs[1] - model_corrs[1]))
-    plot_comparison(axb[3], s, '$VS$', np.abs(data_vs - model_vs))
-    return data_rate
+    plot_comparison(axb[1], s, '$CV$', np.abs(data['CV'] - model['CV']))
+    plot_comparison(axb[2], s, '$\\rho_1$', np.abs(data['corrs'][1] - model['corrs'][1]))
+    plot_comparison(axb[3], s, '$VS$', np.abs(data["vectorstrength"] - model["vectorstrength"]))
 
 
 def ficurve_data(data_path, cell):
@@ -326,15 +352,42 @@ def ficurves(time, rates, ton=0.05, tss0=0.1, tss1=0.05, tbase=0.1):
 def sigmoid(x, x0, k, ymax):
     return ymax/(1 + np.exp(-k*(x - x0)))
 
+
+def fit_ficurves(EODf, contrasts, fonset, fss, data={}):
+    fon_contrasts = np.linspace(np.min(contrasts), np.max(contrasts), 200)
+    # onset slopes:
+    popt = [0.05, 0.03*EODf, EODf]
+    try:
+        popt, _ = curve_fit(sigmoid, contrasts, fonset, popt)
+        fon_slope = popt[2]*popt[1]/4
+        fon_line = sigmoid(fon_contrasts, *popt)
+    except RuntimeError:
+        fon_slope, fon_b = np.polyfit(contrasts, fonset, deg=1)
+        fon_line = fon_slope*fon_contrasts + fon_b
+    # ss slopes:
+    min_contr = -0.2
+    max_contr = +0.2
+    sel = (contrasts >= min_contr) & (contrasts < max_contr)
+    fss_slope, fss_b = np.polyfit(contrasts[sel], fss[sel], deg=1)
+    fss_contrasts = np.linspace(min_contr, max_contr, 200)
+    fss_line = fss_slope*fss_contrasts + fss_b
+    data['fon_slope'] = fon_slope
+    data['fon_contrasts'] = fon_contrasts 
+    data['fon_line'] = fon_line 
+    data['fss_slope'] = fss_slope 
+    data['fss_contrasts'] = fss_contrasts
+    data['fss_line'] = fss_line
+    return data
+
     
 def plot_ficurves(ax, axc, s, EODf, data_contrasts, data_fonset, data_fss,
-                  model_contrasts, model_fonset, model_fss, base_rate):
+                  model_contrasts, model_fonset, model_fss, data, model):
     """ Plot fI curves. """
     ax.axvline(0, **s.lsGrid)
     ax.axhline(EODf, **s.lsGrid)
-    ax.axhline(base_rate, **s.lsBase)
-    ax.plot(100*model_contrasts, model_fss, **s.lsSS)
-    ax.plot(100*model_contrasts, model_fonset, **s.lsOnset)
+    ax.axhline(data['rate'], **s.lsBase)
+    ax.plot(100*model_contrasts, model_fss, label='$f_{\infty}(I)$', **s.lsSS)
+    ax.plot(100*model_contrasts, model_fonset, label='$f_0(I)$', **s.lsOnset)
     sel = (data_contrasts >= model_contrasts[0]) & (data_contrasts <= model_contrasts[-1])
     ax.plot(100*data_contrasts[sel], data_fss[sel], **s.psSS)
     ax.plot(100*data_contrasts[sel], data_fonset[sel], **s.psOnset)
@@ -344,49 +397,21 @@ def plot_ficurves(ax, axc, s, EODf, data_contrasts, data_fonset, data_fss,
     ax.set_xlabel('Contrast', '%')
     ax.set_ylabel('Spike frequency', 'Hz')
     # comparison onset slopes:
-    popt = [0.05, 0.03*EODf, EODf]
-    try:
-        popt, _ = curve_fit(sigmoid, data_contrasts, data_fonset, popt)
-        data_fon_slope = popt[1]/4
-        data_fon_line = sigmoid(model_contrasts, *popt)
-    except RuntimeError:
-        data_fon_slope, data_fon_b = np.polyfit(data_contrasts,
-                                                data_fonset, deg=1)
-        data_fon_line = data_fon_slope*model_contrasts + data_fon_b
-    sel = model_fonset <= 1.1*EODf
-    popt = [0, 0.03*EODf, EODf]    
-    try:
-        popt, _ = curve_fit(sigmoid, model_contrasts[sel], model_fonset[sel], popt)
-        model_fon_slope = popt[1]/4
-        model_fon_line = sigmoid(model_contrasts, *popt)
-    except RuntimeError:
-        model_fon_slope, model_fon_b = np.polyfit(model_contrasts[sel],
-                                                  model_fonset[sel], deg=1)
-        model_fon_line = model_fon_slope*model_contrasts + model_fon_b
-    ax.plot(100*model_contrasts, data_fon_line, **s.lsDataLine)
-    ax.plot(100*model_contrasts, model_fon_line, **s.lsModelLine)
-    plot_comparison(axc[0], s, '$s$', np.abs(model_fon_slope - data_fon_slope)/data_fon_slope)
+    ax.plot(100*data['fon_contrasts'], data['fon_line'], **s.lsDataLine)
+    ax.plot(100*model['fon_contrasts'], model['fon_line'], **s.lsModelLine)
+    plot_comparison(axc[0], s, '$s$', np.abs(model['fon_slope'] - data['fon_slope'])/data['fon_slope'])
     # comparison ss slopes:
-    min_contr = -0.2
-    max_contr = +0.2
-    sel = (data_contrasts >= min_contr) & (data_contrasts < max_contr)
-    data_fss_slope, data_fss_b = np.polyfit(data_contrasts[sel],
-                                           data_fss[sel], deg=1)
-    sel = (model_contrasts >= min_contr) & (model_contrasts <= max_contr)
-    model_fss_slope, model_fss_b = np.polyfit(model_contrasts[sel],
-                                              model_fss[sel], deg=1)
-    data_fss_line = data_fss_slope*model_contrasts[sel] + data_fss_b
-    model_fss_line = model_fss_slope*model_contrasts[sel] + model_fss_b
-    ax.plot(100*model_contrasts[sel], data_fss_line, **s.lsDataLine)
-    ax.plot(100*model_contrasts[sel], model_fss_line, **s.lsModelLine)
-    plot_comparison(axc[2], s, '$s$', np.abs(model_fss_slope - data_fss_slope)/data_fss_slope)
+    ax.plot(100*data['fss_contrasts'], data['fss_line'], **s.lsDataLine)
+    ax.plot(100*model['fss_contrasts'], model['fss_line'], **s.lsModelLine)
+    ax.legend(loc='upper left')
+    plot_comparison(axc[2], s, '$s$', np.abs(model['fss_slope'] - data['fss_slope'])/data['fss_slope'])
     # comparison chi squared:
     model_idxs = [np.argmin(np.abs(model_contrasts - data_contrasts[i]))
                   for i in range(len(data_contrasts))]
     chifon = np.sum((data_fonset - model_fonset[model_idxs])**2)
     chifss = np.sum((data_fss - model_fss[model_idxs])**2)
     normfon = len(data_contrasts)*(EODf/4)**2
-    normfss = len(data_contrasts)*(base_rate/2)**2
+    normfss = len(data_contrasts)*(data['rate']/2)**2
     plot_comparison(axc[1], s, '$\chi^2 f_{on}$', chifon/normfon)
     plot_comparison(axc[3], s, '$\chi^2 f_{ss}$', chifss/normfss)
 
@@ -440,6 +465,8 @@ def main():
                      pt.lighter(s.lsPosContrast, 0.7),
                      pt.lighter(s.lsNegContrast, 0.4),
                      s.lsPosContrast]
+    data_dicts = []
+    model_dicts = []
     
     # load model parameter:
     parameters = load_models("models.csv")
@@ -451,6 +478,8 @@ def main():
         cell = model_params.pop('cell')
         EODf = model_params.pop('EODf')
         print(f'cell {cell_idx:3d}: {cell}')
+        data = dict(cell=cell)
+        model = dict(cell=cell)
         #check_baseeod(data_path, cell)
         #continue
 
@@ -467,16 +496,21 @@ def main():
         # baseline:
         data_spikes, data_eods = baseline_data(data_path, cell)
         model_spikes = baseline_model(EODf, model_params, baseline_tmax)
-        data_rate = plot_baseline(axs[0, 0], axs[0, 1], axs[0, 2], axc[0:2,:].ravel(), s,
-                                  EODf, data_spikes, data_eods, model_spikes)
+        data, model = analyse_baseline(EODf, data_spikes, data_eods, model_spikes,
+                                       data=data, model=model,
+                                       max_eods=15.5, max_lag=15)
+        plot_baseline(axs[0, 0], axs[0, 1], axs[0, 2], axc[0:2,:].ravel(), s,
+                      EODf, data, model)
         
         # fi curves:
         data_contrasts, data_fonset, data_fss = ficurve_data(data_path, cell)
         time, rates = firate_model(EODf, model_params, model_contrasts)
         model_fonset, model_fss, baseline = ficurves(time, rates)
+        data = fit_ficurves(EODf, data_contrasts, data_fonset, data_fss, data)
+        model = fit_ficurves(EODf, model_contrasts, model_fonset, model_fss, model)
         plot_ficurves(axs[1, 0], axc[2:4,:].ravel(), s, EODf,
                       data_contrasts, data_fonset, data_fss,
-                      model_contrasts, model_fonset, model_fss, data_rate)
+                      model_contrasts, model_fonset, model_fss, data, model)
         
         # fi rates:
         time, rates = firate_model(EODf, model_params, rate_contrasts)
@@ -486,7 +520,20 @@ def main():
         fig.savefig(os.path.join(plot_path, cell))
         plt.close(fig)
         #plt.show()
+
+        data_dicts.append(data)
+        model_dicts.append(model)
+
         #break
+
+    data = pd.DataFrame(data_dicts)
+    model = pd.DataFrame(model_dicts)
+    data = data.drop(columns=['isis', 'hist', 'lags', 'cyclic_phases', 'cyclic_rates', 'fon_contrasts', 'fon_line', 'fss_contrasts', 'fss_line'])
+    data.corrs = [c[1] for c in data.corrs]
+    model = model.drop(columns=['isis', 'hist', 'lags', 'cyclic_phases', 'cyclic_rates', 'fon_contrasts', 'fon_line', 'fss_contrasts', 'fss_line'])
+    model.corrs = [c[1] for c in model.corrs]
+    data.to_csv('punitdata.csv')
+    model.to_csv('modeldata.csv')
 
         
 if __name__ == '__main__':
