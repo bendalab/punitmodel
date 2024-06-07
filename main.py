@@ -1,4 +1,3 @@
-
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -19,6 +18,7 @@ def main():
 
     # load model parameter:
     parameters = load_models("models.csv")
+    #parameters = load_models("models_202106.csv")
 
     for example_cell_idx in range(len(parameters)):
 

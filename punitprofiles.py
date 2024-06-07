@@ -453,7 +453,7 @@ def main():
 
     data_path = 'celldata'
     plot_path = 'plots'
-    plot_path = 'plots_big'
+    plot_path = 'plots_new'
     if not os.path.isdir(plot_path):
         os.mkdir(plot_path)
 
@@ -471,7 +471,7 @@ def main():
     
     # load model parameter:
     #parameters = load_models("models.csv")
-    parameters = load_models("models_big_fit.csv")
+    parameters = load_models("models_202106.csv")
 
     # loop over model cells:
     for cell_idx in range(len(parameters)):
