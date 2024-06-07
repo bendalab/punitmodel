@@ -9,7 +9,7 @@ EOD analysis
 """
 
 import numpy as np
-from thunderfish.eventdetection import detect_peaks, std_threshold
+from thunderlab.eventdetection import detect_peaks, std_threshold
 
 
 def detect_eods(data, samplerate):

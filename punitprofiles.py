@@ -453,6 +453,7 @@ def main():
 
     data_path = 'celldata'
     plot_path = 'plots'
+    plot_path = 'plots_big'
     if not os.path.isdir(plot_path):
         os.mkdir(plot_path)
 
@@ -469,7 +470,8 @@ def main():
     model_dicts = []
     
     # load model parameter:
-    parameters = load_models("models.csv")
+    #parameters = load_models("models.csv")
+    parameters = load_models("models_big_fit.csv")
 
     # loop over model cells:
     for cell_idx in range(len(parameters)):

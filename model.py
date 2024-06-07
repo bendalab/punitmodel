@@ -28,6 +28,8 @@ def load_models(file):
         keys = header_parts
         for line in file:
             line_parts = line.strip().split(",")
+            if len(line_parts) <= 1:
+                continue
             parameter = {}
             for i in range(len(keys)):
                 parameter[keys[i]] = float(line_parts[i]) if i > 0 else line_parts[i]
