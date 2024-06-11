@@ -32,7 +32,10 @@ def load_models(file):
                 continue
             parameter = {}
             for i in range(len(keys)):
-                parameter[keys[i]] = float(line_parts[i]) if i > 0 else line_parts[i]
+                if keys[i] in ['cell', 'name']:
+                    parameter[keys[i]] = line_parts[i]
+                else:
+                    parameter[keys[i]] = float(line_parts[i])
             parameters.append(parameter)
     return parameters
 

@@ -452,8 +452,9 @@ def main():
     s = plot_style()
 
     data_path = 'celldata'
-    plot_path = 'plots'
+    #plot_path = 'plots'
     plot_path = 'plots_new'
+    #plot_path = 'plots-2012-07-03-ak'
     if not os.path.isdir(plot_path):
         os.mkdir(plot_path)
 
@@ -472,14 +473,16 @@ def main():
     # load model parameter:
     #parameters = load_models("models.csv")
     parameters = load_models("models_202106.csv")
+    #parameters = load_models("models-2012-07-03-ak.csv")
 
     # loop over model cells:
-    for cell_idx in range(len(parameters)):
-    #for cell_idx in [58]:
+    #for cell_idx in range(len(parameters)):
+    for cell_idx in [-1]:
         model_params = parameters[cell_idx]
         cell = model_params.pop('cell')
+        name = model_params.pop('name', '')
         EODf = model_params.pop('EODf')
-        print(f'cell {cell_idx:3d}: {cell}')
+        print(f'cell {cell_idx:3d}: {cell} {name}')
         data = dict(cell=cell)
         model = dict(cell=cell)
         #check_baseeod(data_path, cell)
@@ -488,7 +491,7 @@ def main():
         # setup figure:
         fig, axg = plt.subplots(1, 2, cmsize=(16, 11), width_ratios=[42, 2])
         fig.subplots_adjust(leftm=8, rightm=3, bottomm=3.5, topm=3, wspace=0.07)
-        fig.text(0.03, 0.96, cell, ha='left')
+        fig.text(0.03, 0.96, f'{cell} {name}', ha='left')
         fig.text(0.97, 0.96, f'EOD$f$={EODf:.0f}Hz', ha='right')
         axs = axg[0].subplots(2, 3, wspace=0.8, hspace=0.4)
         axs[0, 2] = axs[0, 2].make_polar(-0.02, -0.05)
@@ -519,7 +522,10 @@ def main():
         plot_firates(axr, None, s, rate_contrasts, time, rates)
 
         fig.common_yspines(axc)
-        fig.savefig(os.path.join(plot_path, cell))
+        file_name = cell
+        if name:
+            file_name = file_name + '-' + name
+        fig.savefig(os.path.join(plot_path, file_name))
         plt.close(fig)
         #plt.show()
 
