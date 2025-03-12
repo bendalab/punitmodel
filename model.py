@@ -45,7 +45,20 @@ def simulate(stimulus, deltat=0.00005, v_zero=0.0, a_zero=2.0,
              threshold=1.0, v_base=0.0, delta_a=0.08, tau_a=0.1,
              v_offset=-10.0, mem_tau=0.015, noise_strength=0.05,
              input_scaling=60.0, dend_tau=0.001, ref_period=0.001):
-    """ Simulate a P-unit.
+    """Simulate a P-unit.
+
+    Parameters
+    ----------
+    stimulus: array of float
+
+        The stimulus. This is the EOD (sinewave with EOD frequency
+        `EODf` frequency of the model parameters and amplitude of one)
+        with amplitude modulation or additional signals.
+        Samples need to be spaced by `deltat`.
+    deltat: float
+        S=Time step used for integrating the model.
+    **kwargs: dict
+        The model parameters.
 
     Returns
     -------

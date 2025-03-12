@@ -12,9 +12,9 @@ numba (optional, speeds simulation up: pre-compiles functions to machine code)
 
 
 def main():
-    # tiny example program:
-
-    example_cell_idx = 20
+    """
+    Tiny example program demonstrating how to load model parameters and simulate the models.
+    """
 
     # load model parameter:
     parameters = load_models("models.csv")
@@ -25,7 +25,7 @@ def main():
         model_params = parameters[example_cell_idx]
         cell = model_params.pop('cell')
         EODf = model_params.pop('EODf')
-        print("Example with cell:", cell)
+        print(f"Example with cell {cell}, EODf={EODf:.0f}Hz")
 
         # generate EOD-like stimulus with an amplitude step:
         deltat = model_params["deltat"]
@@ -37,7 +37,7 @@ def main():
         t0 = 0.5
         t1 = 1.5
         contrast = 0.3
-        stimulus[int(t0//deltat):int(t1//deltat)] *= (1.0+contrast)
+        stimulus[int(t0//deltat):int(t1//deltat)] *= (1.0 + contrast)
 
         # integrate the model:
         spikes = simulate(stimulus, **model_params)
@@ -49,12 +49,12 @@ def main():
 
         ax1.plot(time, stimulus)
         ax1.set_title("Stimulus")
-        ax1.set_ylabel("Amplitude in mV")
+        ax1.set_ylabel("Amplitude")
 
         ax2.plot(time, rate)
-        ax2.set_title("Model Frequency")
-        ax2.set_ylabel("Frequency in Hz")
-        ax2.set_xlabel("Time in s")
+        ax2.set_title("Model spike frequency")
+        ax2.set_ylabel("Frequency [Hz]")
+        ax2.set_xlabel("Time [s]")
         plt.show()
     plt.close()
 
