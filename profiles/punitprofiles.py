@@ -1,3 +1,5 @@
+import sys
+sys.path.insert(0, '..')  # for model.py
 import os
 import numpy as np
 from scipy.optimize import curve_fit
@@ -448,15 +450,21 @@ def check_baseeod(data_path, cell):
     plt.show()
 
 
-def main():
-    s = plot_style()
-
-    data_path = 'celldata'
-    #plot_path = 'plots'
-    plot_path = 'plots_new'
-    #plot_path = 'plots-2012-07-03-ak'
+def main(model_path):
+    if model_path is None:
+        model_path = '../models.csv'
+        #model_path = '../models_202106.csv'
+    
+    data_path = '../celldata'
+    plot_path = 'plots'
+    suffix = ''
+    if '_' in model_path:
+        suffix = '_' + model_path.split('_')[-1].split('.')[0]
+    plot_path += suffix
     if not os.path.isdir(plot_path):
         os.mkdir(plot_path)
+        
+    s = plot_style()
 
     baseline_tmax = 15 # seconds
     model_contrasts = np.arange(-0.3, 0.31, 0.01)
@@ -471,13 +479,11 @@ def main():
     model_dicts = []
     
     # load model parameter:
-    #parameters = load_models("models.csv")
-    parameters = load_models("models_202106.csv")
-    #parameters = load_models("models-2012-07-03-ak.csv")
+    parameters = load_models(model_path)
 
     # loop over model cells:
-    #for cell_idx in range(len(parameters)):
-    for cell_idx in [-1]:
+    for cell_idx in range(len(parameters)):
+    #for cell_idx in [-1]:
         model_params = parameters[cell_idx]
         cell = model_params.pop('cell')
         name = model_params.pop('name', '')
@@ -492,6 +498,7 @@ def main():
         fig, axg = plt.subplots(1, 2, cmsize=(16, 11), width_ratios=[42, 2])
         fig.subplots_adjust(leftm=8, rightm=3, bottomm=3.5, topm=3, wspace=0.07)
         fig.text(0.03, 0.96, f'{cell} {name}', ha='left')
+        fig.text(0.5, 0.96, f'{os.path.basename(model_path)} {cell_idx}', ha='center', fontsize='small', color=s.colors['gray'])
         fig.text(0.97, 0.96, f'EOD$f$={EODf:.0f}Hz', ha='right')
         axs = axg[0].subplots(2, 3, wspace=0.8, hspace=0.4)
         axs[0, 2] = axs[0, 2].make_polar(-0.02, -0.05)
@@ -541,8 +548,8 @@ def main():
     model = model.drop(columns=['isis', 'hist', 'lags', 'cyclic_phases', 'cyclic_rates', 'fon_contrasts', 'fon_line', 'fss_contrasts', 'fss_line'])
     model.corrs = [c[1] for c in model.corrs]
     data.to_csv('punitdata.csv')
-    model.to_csv('modeldata.csv')
+    model.to_csv('model' + suffix + 'data.csv')
 
         
 if __name__ == '__main__':
-    main()
+    main(sys.argv[1] if len(sys.argv) > 1 else None)

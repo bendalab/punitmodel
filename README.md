@@ -41,9 +41,11 @@ frequency is in the table with the model parameters.
 
 ## Profiles
 
-The python script `punitprofiles.py` generates for each model cell a
+In `profiles/` the python script `punitprofiles.py` generates for each model cell a
 pdf with plots showing basic properties of the model in comparison o
-the real cell's data. The plots are placed into the `plots/` folder.
+the real cell's data. The plots are placed into the `profiles/plots/` folder.
+In addition, some basic properties of the cells and the models are stored in
+`profiles/punitdata.csv` and `profiles/modeldata.csv`, respectively.
 
 The image of the example cell shown above was generated wih this script.
 
@@ -65,3 +67,10 @@ Uses:
 - `punitprofiles.py`
 - `baseline.py`
 - `eod.py`
+
+Call it from within the ` profiles/` folder. Optionally you may pass the models file as an argument:
+
+``` sh
+> cd profiles
+> python3 punitprofiles.py ../models_202106.csv
+```
