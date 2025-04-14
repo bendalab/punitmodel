@@ -430,6 +430,46 @@ def plot_firates(ax, axc, s, contrasts, time, rates):
     #plot_comparison(axc, s, '$\chi^2$', 0.1)
 
 
+def noise_response(EODf, model_params, contrasts, t0=-0.4, t1=0.2):
+    """ Simulate spike frequencies in response to step stimuli.
+
+    Parameters
+    ----------
+    EODf: float
+        EOD frequency in Hertz
+    model_params: dict
+        Model parameters.
+    contrasts: ndarray of floats
+        Contrasts for which responses are simulated.
+    t0: float
+        Start of simulation before the step in seconds (negative).
+    t1: float
+        End of simulation after the step in seconds.
+    """
+    pass
+    """
+    # needs to be coded. tis is the ficurve code.
+    deltat = model_params["deltat"]
+    time = np.arange(t0, t1, deltat)
+    rates = [None] * len(contrasts)
+    for i, contrast in enumerate(contrasts):
+        # generate EOD stimulus with an amplitude step:
+        stimulus = np.sin(2*np.pi*EODf*time)
+        stimulus[np.argmin(np.abs(time)):] *= (1.0+contrast)
+        # integrate the model:
+        n = 20
+        rate = np.zeros(len(time))
+        for k in range(n):
+            model_params['v_zero'] = np.random.rand()
+            model_params['a_zero'] += 0.02*model_params['a_zero']*np.random.randn()
+            spikes = simulate(stimulus, **model_params)
+            spikes += time[0]
+            trial_rate = instantaneous_rate(spikes, time)
+            rate += trial_rate/n
+        rates[i] = rate
+    return time, rates
+    """
+
 def check_baseeod(data_path, cell):
     """
     bad EODs (clipped EOD trace!)
