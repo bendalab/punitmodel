@@ -14,7 +14,7 @@ Model parameters are stored in csv files.
 - `goodcells.dat` contains in each line a cell identifier of those
   cells where the models fit the cells reasonably well.
 
-![2012-12-21-am](2012-12-21-am-invivo-1.png)
+![2012-12-21-am](docs/2012-12-21-am-invivo-1.png)
 
 
 ## model.py
@@ -59,3 +59,9 @@ Requires:
   pip3 install git+https://github.com/bendalab/plottools.git
   ```
 - `numpy`, `scipy`, `pandas`, `matplotlib`
+
+Uses:
+
+- `punitprofiles.py`
+- `baseline.py`
+- `eod.py`
