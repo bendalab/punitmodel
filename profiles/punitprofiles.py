@@ -388,8 +388,8 @@ def plot_ficurves(ax, axc, s, EODf, data_contrasts, data_fonset, data_fss,
     ax.axvline(0, **s.lsGrid)
     ax.axhline(EODf, **s.lsGrid)
     ax.axhline(data['rate'], **s.lsBase)
-    ax.plot(100*model_contrasts, model_fss, label='$f_{\infty}(I)$', **s.lsSS)
-    ax.plot(100*model_contrasts, model_fonset, label='$f_0(I)$', **s.lsOnset)
+    ax.plot(100*model_contrasts, model_fss, label=r'$f_{\infty}(I)$', **s.lsSS)
+    ax.plot(100*model_contrasts, model_fonset, label=r'$f_0(I)$', **s.lsOnset)
     sel = (data_contrasts >= model_contrasts[0]) & (data_contrasts <= model_contrasts[-1])
     ax.plot(100*data_contrasts[sel], data_fss[sel], **s.psSS)
     ax.plot(100*data_contrasts[sel], data_fonset[sel], **s.psOnset)
@@ -414,8 +414,8 @@ def plot_ficurves(ax, axc, s, EODf, data_contrasts, data_fonset, data_fss,
     chifss = np.sum((data_fss - model_fss[model_idxs])**2)
     normfon = len(data_contrasts)*(EODf/4)**2
     normfss = len(data_contrasts)*(data['rate']/2)**2
-    plot_comparison(axc[1], s, '$\chi^2 f_{on}$', chifon/normfon)
-    plot_comparison(axc[3], s, '$\chi^2 f_{ss}$', chifss/normfss)
+    plot_comparison(axc[1], s, r'$\chi^2 f_{on}$', chifon/normfon)
+    plot_comparison(axc[3], s, r'$\chi^2 f_{ss}$', chifss/normfss)
 
     
 def plot_firates(ax, axc, s, contrasts, time, rates):

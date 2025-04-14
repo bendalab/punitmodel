@@ -95,7 +95,7 @@ def serial_correlations(spikes, max_lag=10):
 
 
 def vector_strength(spikes, cycles):
-    """ Vector strength of spike times relative to a periodic signal.
+    r""" Vector strength of spike times relative to a periodic signal.
 
     Computes for each spike time its phase $\varphi_i$
     within the period of `cycles`.
