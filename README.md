@@ -67,6 +67,7 @@ Uses:
 - `punitprofiles.py`
 - `baseline.py`
 - `eod.py`
+- `spectral.py`
 
 Call it from within the ` profiles/` folder. Optionally you may pass the models file as an argument:
 

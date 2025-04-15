@@ -8,6 +8,7 @@ Spectral analysis of neuronal responses.
 
 import numpy as np
 from scipy.signal import welch, csd
+from scipy.stats import norm
 
 
 def whitenoise(cflow, cfup, dt, duration, rng=np.random.default_rng()):
@@ -78,3 +79,14 @@ def spectra(stimulus, spikes, dt, nfft):
         prr[i] = rr
         prs[i] = rs
     return freq, pss, np.mean(prr, 0), np.mean(prs, 0)
+
+
+def rate(time, spikes, sigma):
+    kernel = norm.pdf(time[time < 8*sigma], loc=4*sigma, scale=sigma)
+    rates = np.zeros((len(spikes), len(time)))
+    xtime = np.append(time, time[-1] + time[1] - time[0])
+    for i, spiket in enumerate(spikes):
+        b, _ = np.histogram(spiket, xtime)
+        rates[i] = np.convolve(b, kernel, 'same')
+    return np.mean(rates, 0), np.std(rates, 0)
+

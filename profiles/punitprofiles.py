@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 from model import simulate, load_models
 from eods import plot_eod_interval_hist
 from baseline import interval_statistics, serial_correlations, vector_strength, cyclic_rate
-from spectral import whitenoise, spectra
+from spectral import whitenoise, spectra, rate
 import plottools.plottools as pt
 
 
@@ -30,17 +30,20 @@ def plot_style():
         error_color = colors['red']
         poscontrast_color = colors['magenta']
         negcontrast_color = colors['purple']
+        stimulus_color = colors['darkgreen']
+        rate_color = colors['red']
         
         lw = 1.5
-        ms = 4
+        lwthin = 0.7
+        ms = 3
         
-        lsGrid = dict(color='gray', ls=':', lw=0.5)
-        lsData = dict(color=data_color, lw=lw)
-        lsModel = dict(color=model_color, lw=lw)
+        lsGrid = dict(color='gray', ls=':', lw=lwthin)
+        lsData = dict(color=data_color, lw=lwthin)
+        lsModel = dict(color=model_color, lw=lwthin)
         lpsData = dict(color=data_color, ls='-', lw=lw, marker='o', ms=ms, clip_on=False)
         lpsModel = dict(color=model_color, ls='-', lw=lw, marker='o', ms=ms, clip_on=False)
-        fsData = dict(color=data_color, alpha=0.5)
-        fsModel = dict(color=model_color, alpha=0.5)
+        fsData = dict(facecolor=data_color, edgecolor='none', alpha=0.5)
+        fsModel = dict(facecolor=model_color, edgecolor='none', alpha=0.5)
         psOnset = dict(ls='none', color=onset_color, marker='o', ms=ms, clip_on=False)
         psSS = dict(ls='none', color=ss_color, marker='o', ms=ms, clip_on=False)
         lsOnset = dict(ls='-', color=onset_color, lw=lw)
@@ -48,6 +51,11 @@ def plot_style():
         lsBase = dict(ls='-', color=base_color, lw=lw)
         lsDataLine = dict(color='black', lw=lw, zorder=-10)
         lsModelLine = dict(color='gray', lw=lw, zorder=-10)
+        lsRaster = dict(color='k', linewidths=0.5, lineoffsets=1, linelengths=0.7)
+        lsStim = dict(color=stimulus_color, lw=lw)
+        lsRate = dict(color=rate_color, lw=lw)
+        fsRate = dict(facecolor=rate_color, edgecolor='none', alpha=0.5)
+        lsSpec = dict(color=model_color, lw=lw)
 
         lsPosContrast = dict(ls='-', color=poscontrast_color, lw=lw)
         lsNegContrast = dict(ls='-', color=negcontrast_color, lw=lw)
@@ -55,6 +63,7 @@ def plot_style():
     pt.axes_params(0, 0, 0, 'none')
     pt.figure_params(format='pdf')
     pt.spines_params('lb')
+    pt.text_params(8)
     pt.legend_params(fontsize='small', frameon=False,
                      handlelength=1.2, borderpad=0)
     return s
@@ -421,8 +430,8 @@ def plot_ficurves(ax, axc, s, EODf, data_contrasts, data_fonset, data_fss,
     
 def plot_firates(ax, axc, s, contrasts, time, rates):
     """ Plot a few selected firng rates in response to step stimuli. """
-    for contrast, rate, color in zip(contrasts, rates, s.rate_colors):
-        ax.plot(1000*time, rate, label=f'${100*contrast:+.0f}$%', **color)
+    for contrast, rate, style in zip(contrasts, rates, s.rate_styles):
+        ax.plot(1000*time, rate, label=f'${100*contrast:+.0f}$%', **style)
     ax.legend(ncol=3, loc='upper right', bbox_to_anchor=(1, 1.1))
     ax.set_xlim(-20, 50)
     ax.set_ylim(0, 1200)
@@ -464,10 +473,11 @@ def spectra_model(EODf, model_params, contrasts,
                           np.arange(len(am))*dt, am)
     transfers = []
     coheres = []
+    spikesc = None
     for i, contrast in enumerate(contrasts):
         # generate EOD stimulus with an amplitude step:
         stimulus = np.sin(2*np.pi*EODf*time)
-        stimulus[-len(am):] *= 1 + contrast*am
+        stimulus[-len(am_interp):] *= 1 + contrast*am_interp
         spikes = []
         # integrate the model:
         for k in range(trials):
@@ -476,41 +486,59 @@ def spectra_model(EODf, model_params, contrasts,
             spiket = simulate(stimulus, **model_params)
             #spikes.append(spiket[spiket > tinit] - tinit)
             spikes.append(spiket)
+        if i == 1:
+            spikesc = spikes
         freq, pss, prr, prs = spectra(contrast*am,
                                       spikes, dt, nfft)
-        """
-        plt.close('all')
-        plt.plot(freq, np.abs(prs)/pss)
-        plt.xlim(0, 300)
-        plt.ylim(0, 10000)
-        plt.show()
-        exit()
-        """
         transfers.append(np.abs(prs)/pss)
         coheres.append(np.abs(prs)**2/pss/prr)
-    return freq, transfers, coheres
+    return freq, transfers, coheres, np.arange(len(am))*dt, am, spikes
 
 
-def plot_transfers(ax, freq, transfers, contrasts, fcutoff):
+def plot_transfers(ax, s, freq, transfers, contrasts, fcutoff):
     sel = freq <= fcutoff
-    for trans, c in zip(transfers, contrasts):
-        ax.plot(freq[sel], trans[sel], label=f'{100*c:.0f}%')
+    for trans, c, style in zip(transfers, contrasts, s.spectra_styles):
+        ax.plot(freq[sel], 1e-2*trans[sel], label=f'{100*c:.0f}%', clip_on=False, **style)
     ax.set_xlabel('Frequency', 'Hz')
-    ax.set_ylabel('gain', 'XXX')
-    ax.set_xlim(10, fcutoff)
+    ax.set_ylabel('gain', 'Hz/%')
+    ax.set_xlim(0, fcutoff)
     ax.set_xticks_delta(100)
+    ax.set_ylim(bottom=0)
 
 
-def plot_coherences(ax, freq, coherences, contrasts, fcutoff):
+def plot_coherences(ax, s, freq, coherences, contrasts, fcutoff):
     sel = freq <= fcutoff
-    for cohere, c in zip(coherences, contrasts):
-        ax.plot(freq[sel], cohere[sel], label=f'{100*c:.0f}%')
+    for cohere, c, style in zip(coherences, contrasts, s.spectra_styles):
+        ax.plot(freq[sel], cohere[sel], label=f'{100*c:.0f}%', **style)
     ax.set_xlabel('Frequency', 'Hz')
     ax.set_ylabel('Coherence')
-    ax.set_xlim(10, fcutoff)
+    ax.set_xlim(0, fcutoff)
     ax.set_ylim(0, 1)
     ax.set_xticks_delta(100)
+    ax.legend(loc='upper right', markerfirst=True)
 
+    
+def plot_raster(ax, s, time, am, spikes, twin):
+    t0 = 1.0
+    sel = (time >= t0) & (time <= t0 + twin)
+    frate, fratesd = rate(time, spikes, 0.002)
+    spikes = [1e3*(spiket[(spiket > t0) & (spiket < t0 + twin)] - t0) for spiket in spikes]
+    rstyle = s.lsRaster
+    rstyle['linelengths'] *= 1000/len(spikes)
+    rstyle['lineoffsets'] *= 1000/len(spikes)
+    ax.show_spines('l')
+    ax.eventplot(spikes, **rstyle)
+    ax.fill_between(1e3*(time[sel] - t0), frate[sel] - fratesd[sel], frate[sel] + fratesd[sel], **s.fsRate)
+    ax.plot(1e3*(time[sel] - t0), frate[sel], **s.lsRate)
+    ax.set_ylabel('Rate', 'Hz')
+    ax.set_ylim(0, 1000)
+    ax.xscalebar(1, 1.05, 20, 'ms', ha='right', va='top')
+    axs = ax.inset_axes([0, -0.4, 1, 0.35])
+    axs.show_spines('')
+    axs.axhline(0, **s.lsGrid)
+    axs.plot(1e3*(time[sel] - t0), am[sel], clip_on=False, **s.lsStim)
+    axs.text(0, -10, '10\,\%', ha='right', clip_on=False)
+    
     
 def check_baseeod(data_path, cell):
     """
@@ -551,13 +579,14 @@ def main(model_path):
     baseline_tmax = 15 # seconds
     model_contrasts = np.arange(-0.3, 0.31, 0.01)
     rate_contrasts = [-0.2, +0.05, -0.1, +0.1, -0.05, +0.2]
-    s.rate_colors = [s.lsNegContrast,
+    s.rate_styles = [s.lsNegContrast,
                      pt.lighter(s.lsPosContrast, 0.4),
                      pt.lighter(s.lsNegContrast, 0.7),
                      pt.lighter(s.lsPosContrast, 0.7),
                      pt.lighter(s.lsNegContrast, 0.4),
                      s.lsPosContrast]
     spectra_contrasts = [0.05, 0.1, 0.2]
+    s.spectra_styles = [pt.lighter(s.lsSpec, 0.4), pt.lighter(s.lsSpec, 0.7), s.lsSpec]
     fcutoff = 300
     data_dicts = []
     model_dicts = []
@@ -579,19 +608,19 @@ def main(model_path):
         #continue
 
         # setup figure:
-        fig, axg = plt.subplots(2, 2, cmsize=(16, 14), width_ratios=[42, 2],
+        fig, axg = plt.subplots(2, 2, cmsize=(16, 16), width_ratios=[42, 2],
                                 height_ratios=[3, 1])
-        fig.subplots_adjust(leftm=8, rightm=3, bottomm=3.5, topm=3,
-                            wspace=0.07, hspace=0.3)
-        fig.text(0.03, 0.96, f'{cell} {name}', ha='left')
-        fig.text(0.5, 0.96, f'{os.path.basename(model_path)} {cell_idx}', ha='center', fontsize='small', color=s.colors['gray'])
-        fig.text(0.97, 0.96, f'EOD$f$={EODf:.0f}Hz', ha='right')
+        fig.subplots_adjust(leftm=8.5, rightm=3, bottomm=4.5, topm=4,
+                            wspace=0.07, hspace=0.25)
+        fig.text(0.03, 0.97, f'{cell} {name}', ha='left', fontsize='large')
+        fig.text(0.5, 0.97, f'{os.path.basename(model_path)} {cell_idx}', ha='center', color=s.colors['gray'])
+        fig.text(0.97, 0.97, f'EOD$f$={EODf:.0f}Hz', ha='right', fontsize='large')
         axs = axg[0, 0].subplots(2, 3, wspace=0.8, hspace=0.4)
         axs[0, 2] = axs[0, 2].make_polar(-0.02, -0.05)
         axr = fig.merge(axs[1, 1:3])
         axc = axg[0, 1].subplots(4, 2, hspace=0.6, wspace=0.2)
         axg[1, 1].set_visible(False)
-        axn = axg[1, 0].subplots(1, 3, width_ratios=[3, 2, 2], wspace=0.5)
+        axn = axg[1, 0].subplots(1, 3, width_ratios=[3, 2, 2], wspace=0.6)
 
         # baseline:
         data_spikes, data_eods = baseline_data(data_path, cell)
@@ -617,12 +646,13 @@ def main(model_path):
         plot_firates(axr, None, s, rate_contrasts, time, rates)
 
         # spectra:
-        freq, transfers, coheres = spectra_model(EODf, model_params,
-                                                 spectra_contrasts, fcutoff,
-                                                 0.0005, 2**9, tinit=0.5,
-                                                 tmax=20.0, trials=20)
-        plot_transfers(axn[1], freq, transfers, spectra_contrasts, fcutoff)
-        plot_coherences(axn[2], freq, coheres, spectra_contrasts, fcutoff)
+        freq, transfers, coheres, time, am, spikes = \
+            spectra_model(EODf, model_params, spectra_contrasts,
+                          fcutoff, 0.0005, 2**9, tinit=0.5, tmax=20.0,
+                          trials=20)
+        plot_raster(axn[0], s, time, am, spikes, 0.1)
+        plot_transfers(axn[1], s, freq, transfers, spectra_contrasts, fcutoff)
+        plot_coherences(axn[2], s, freq, coheres, spectra_contrasts, fcutoff)
 
         fig.common_yspines(axc)
         file_name = cell
@@ -635,7 +665,7 @@ def main(model_path):
         data_dicts.append(data)
         model_dicts.append(model)
 
-        #break
+        break
 
     data = pd.DataFrame(data_dicts)
     model = pd.DataFrame(model_dicts)
