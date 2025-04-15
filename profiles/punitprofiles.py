@@ -518,10 +518,9 @@ def plot_coherences(ax, s, freq, coherences, contrasts, fcutoff):
     ax.legend(loc='upper right', markerfirst=True)
 
     
-def plot_raster(ax, s, time, am, spikes, twin):
+def plot_raster(ax, s, time, am, frate, fratesd, spikes, twin):
     t0 = 1.0
     sel = (time >= t0) & (time <= t0 + twin)
-    frate, fratesd = rate(time, spikes, 0.002)
     spikes = [1e3*(spiket[(spiket > t0) & (spiket < t0 + twin)] - t0) for spiket in spikes]
     rstyle = s.lsRaster
     rstyle['linelengths'] *= 1000/len(spikes)
@@ -537,7 +536,7 @@ def plot_raster(ax, s, time, am, spikes, twin):
     axs.show_spines('')
     axs.axhline(0, **s.lsGrid)
     axs.plot(1e3*(time[sel] - t0), am[sel], clip_on=False, **s.lsStim)
-    axs.text(0, -10, '10\,\%', ha='right', clip_on=False)
+    axs.text(-5, 0, '10\,\%', ha='right', va='center')
     
     
 def check_baseeod(data_path, cell):
@@ -608,7 +607,7 @@ def main(model_path):
         #continue
 
         # setup figure:
-        fig, axg = plt.subplots(2, 2, cmsize=(16, 16), width_ratios=[42, 2],
+        fig, axg = plt.subplots(2, 2, cmsize=(16, 15), width_ratios=[42, 2],
                                 height_ratios=[3, 1])
         fig.subplots_adjust(leftm=8.5, rightm=3, bottomm=4.5, topm=4,
                             wspace=0.07, hspace=0.25)
@@ -650,7 +649,9 @@ def main(model_path):
             spectra_model(EODf, model_params, spectra_contrasts,
                           fcutoff, 0.0005, 2**9, tinit=0.5, tmax=20.0,
                           trials=20)
-        plot_raster(axn[0], s, time, am, spikes, 0.1)
+        frate, fratesd = rate(time, spikes, 0.002)
+        model['respmod'] = np.std(frate)
+        plot_raster(axn[0], s, time, am, frate, fratesd, spikes, 0.1)
         plot_transfers(axn[1], s, freq, transfers, spectra_contrasts, fcutoff)
         plot_coherences(axn[2], s, freq, coheres, spectra_contrasts, fcutoff)
 
@@ -665,7 +666,7 @@ def main(model_path):
         data_dicts.append(data)
         model_dicts.append(model)
 
-        break
+        #break
 
     data = pd.DataFrame(data_dicts)
     model = pd.DataFrame(model_dicts)
