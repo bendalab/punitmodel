@@ -522,7 +522,7 @@ def plot_raster(ax, s, time, am, frate, fratesd, spikes, twin):
     t0 = 1.0
     sel = (time >= t0) & (time <= t0 + twin)
     spikes = [1e3*(spiket[(spiket > t0) & (spiket < t0 + twin)] - t0) for spiket in spikes]
-    rstyle = s.lsRaster
+    rstyle = dict(**s.lsRaster)
     rstyle['linelengths'] *= 1000/len(spikes)
     rstyle['lineoffsets'] *= 1000/len(spikes)
     ax.show_spines('l')
