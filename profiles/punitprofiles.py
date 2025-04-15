@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 from model import simulate, load_models
 from eods import plot_eod_interval_hist
 from baseline import interval_statistics, serial_correlations, vector_strength, cyclic_rate
+from spectral import whitenoise, spectra
 import plottools.plottools as pt
 
 
@@ -430,8 +431,10 @@ def plot_firates(ax, axc, s, contrasts, time, rates):
     #plot_comparison(axc, s, '$\chi^2$', 0.1)
 
 
-def noise_response(EODf, model_params, contrasts, t0=-0.4, t1=0.2):
-    """ Simulate spike frequencies in response to step stimuli.
+def spectra_model(EODf, model_params, contrasts,
+                  fcutoff=300, dt = 0.0005, nfft = 2**9,
+                  tinit=0.5, tmax=4.0, trials=20):
+    """ Simulate response spectra to whitenoise stimuli.
 
     Parameters
     ----------
@@ -441,35 +444,74 @@ def noise_response(EODf, model_params, contrasts, t0=-0.4, t1=0.2):
         Model parameters.
     contrasts: ndarray of floats
         Contrasts for which responses are simulated.
-    t0: float
-        Start of simulation before the step in seconds (negative).
-    t1: float
-        End of simulation after the step in seconds.
+    dt: float
+        Temporal resolution for computing spectra in seconds.
+    nfft: int
+        Number of data points for fourier transform.
+    tinit: float
+        Initial time of simulation skipped for analysis in seconds.
+    tmax: float
+        Total time of simulation after tskip in seconds.
+    trials: int
+        Number of trials.
     """
-    pass
-    """
-    # needs to be coded. tis is the ficurve code.
     deltat = model_params["deltat"]
-    time = np.arange(t0, t1, deltat)
-    rates = [None] * len(contrasts)
+    time = np.arange(0, tinit + tmax, deltat)
+    # whitenoise stimulus with stdev = 1:
+    rng = np.random.default_rng()
+    am = whitenoise(0, fcutoff, dt, tinit + tmax, rng=rng)
+    am_interp = np.interp(np.arange(0, tinit + tmax, model_params['deltat']),
+                          np.arange(len(am))*dt, am)
+    transfers = []
+    coheres = []
     for i, contrast in enumerate(contrasts):
         # generate EOD stimulus with an amplitude step:
         stimulus = np.sin(2*np.pi*EODf*time)
-        stimulus[np.argmin(np.abs(time)):] *= (1.0+contrast)
+        stimulus[-len(am):] *= 1 + contrast*am
+        spikes = []
         # integrate the model:
-        n = 20
-        rate = np.zeros(len(time))
-        for k in range(n):
+        for k in range(trials):
             model_params['v_zero'] = np.random.rand()
             model_params['a_zero'] += 0.02*model_params['a_zero']*np.random.randn()
-            spikes = simulate(stimulus, **model_params)
-            spikes += time[0]
-            trial_rate = instantaneous_rate(spikes, time)
-            rate += trial_rate/n
-        rates[i] = rate
-    return time, rates
-    """
+            spiket = simulate(stimulus, **model_params)
+            #spikes.append(spiket[spiket > tinit] - tinit)
+            spikes.append(spiket)
+        freq, pss, prr, prs = spectra(contrast*am,
+                                      spikes, dt, nfft)
+        """
+        plt.close('all')
+        plt.plot(freq, np.abs(prs)/pss)
+        plt.xlim(0, 300)
+        plt.ylim(0, 10000)
+        plt.show()
+        exit()
+        """
+        transfers.append(np.abs(prs)/pss)
+        coheres.append(np.abs(prs)**2/pss/prr)
+    return freq, transfers, coheres
 
+
+def plot_transfers(ax, freq, transfers, contrasts, fcutoff):
+    sel = freq <= fcutoff
+    for trans, c in zip(transfers, contrasts):
+        ax.plot(freq[sel], trans[sel], label=f'{100*c:.0f}%')
+    ax.set_xlabel('Frequency', 'Hz')
+    ax.set_ylabel('gain', 'XXX')
+    ax.set_xlim(10, fcutoff)
+    ax.set_xticks_delta(100)
+
+
+def plot_coherences(ax, freq, coherences, contrasts, fcutoff):
+    sel = freq <= fcutoff
+    for cohere, c in zip(coherences, contrasts):
+        ax.plot(freq[sel], cohere[sel], label=f'{100*c:.0f}%')
+    ax.set_xlabel('Frequency', 'Hz')
+    ax.set_ylabel('Coherence')
+    ax.set_xlim(10, fcutoff)
+    ax.set_ylim(0, 1)
+    ax.set_xticks_delta(100)
+
+    
 def check_baseeod(data_path, cell):
     """
     bad EODs (clipped EOD trace!)
@@ -515,6 +557,8 @@ def main(model_path):
                      pt.lighter(s.lsPosContrast, 0.7),
                      pt.lighter(s.lsNegContrast, 0.4),
                      s.lsPosContrast]
+    spectra_contrasts = [0.05, 0.1, 0.2]
+    fcutoff = 300
     data_dicts = []
     model_dicts = []
     
@@ -535,16 +579,20 @@ def main(model_path):
         #continue
 
         # setup figure:
-        fig, axg = plt.subplots(1, 2, cmsize=(16, 11), width_ratios=[42, 2])
-        fig.subplots_adjust(leftm=8, rightm=3, bottomm=3.5, topm=3, wspace=0.07)
+        fig, axg = plt.subplots(2, 2, cmsize=(16, 14), width_ratios=[42, 2],
+                                height_ratios=[3, 1])
+        fig.subplots_adjust(leftm=8, rightm=3, bottomm=3.5, topm=3,
+                            wspace=0.07, hspace=0.3)
         fig.text(0.03, 0.96, f'{cell} {name}', ha='left')
         fig.text(0.5, 0.96, f'{os.path.basename(model_path)} {cell_idx}', ha='center', fontsize='small', color=s.colors['gray'])
         fig.text(0.97, 0.96, f'EOD$f$={EODf:.0f}Hz', ha='right')
-        axs = axg[0].subplots(2, 3, wspace=0.8, hspace=0.4)
+        axs = axg[0, 0].subplots(2, 3, wspace=0.8, hspace=0.4)
         axs[0, 2] = axs[0, 2].make_polar(-0.02, -0.05)
-        axr = fig.merge(axs[1,1:3])
-        axc = axg[1].subplots(4, 2, hspace=0.6, wspace=0.2)
-        
+        axr = fig.merge(axs[1, 1:3])
+        axc = axg[0, 1].subplots(4, 2, hspace=0.6, wspace=0.2)
+        axg[1, 1].set_visible(False)
+        axn = axg[1, 0].subplots(1, 3, width_ratios=[3, 2, 2], wspace=0.5)
+
         # baseline:
         data_spikes, data_eods = baseline_data(data_path, cell)
         model_spikes = baseline_model(EODf, model_params, baseline_tmax)
@@ -567,6 +615,14 @@ def main(model_path):
         # fi rates:
         time, rates = firate_model(EODf, model_params, rate_contrasts)
         plot_firates(axr, None, s, rate_contrasts, time, rates)
+
+        # spectra:
+        freq, transfers, coheres = spectra_model(EODf, model_params,
+                                                 spectra_contrasts, fcutoff,
+                                                 0.0005, 2**9, tinit=0.5,
+                                                 tmax=20.0, trials=20)
+        plot_transfers(axn[1], freq, transfers, spectra_contrasts, fcutoff)
+        plot_coherences(axn[2], freq, coheres, spectra_contrasts, fcutoff)
 
         fig.common_yspines(axc)
         file_name = cell
