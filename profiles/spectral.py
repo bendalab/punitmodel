@@ -3,6 +3,9 @@ Spectral analysis of neuronal responses.
 
 ## Functions
 
+- `whitenoise()`: band-limited white noise.
+- `spectra()`: stimulus- and response power spectra, and cross spectrum.
+- `rate()`: firing rate computed by kernel convolution.
 
 """
 
@@ -66,6 +69,30 @@ def whitenoise(cflow, cfup, dt, duration, rng=np.random.default_rng()):
 
 
 def spectra(stimulus, spikes, dt, nfft):
+    """ Stimulus- and response power spectra, and cross spectrum.
+
+    Parameters
+    ----------
+    stimulus: ndarray of float
+        Stimulus waveform with sampling interval 'dt'.
+    spikes: list of ndarrays of float
+        Spike times in response to the stimulus.
+    dt: float
+        Sampling interval of stimulus and resolution of the binary spike train.
+    nfft: int
+        Number of samples used for each Fourier transformation.
+
+    Returns
+    -------
+    freqs: ndarray of float
+        The frequencies corresponding to the spectra.
+    pss: ndarray of float
+        Power spectrum of the stimulus.
+    prr: ndarray of float
+        Power spectrum of the response averaged over trials.
+    psr: ndarray of complex
+        Cross spectrum between stimulus and response averaged over trials.
+    """
     time = np.arange(len(stimulus))*dt
     freq, pss = welch(stimulus, fs=1/dt, nperseg=nfft, noverlap=nfft//2)
     prr = np.zeros((len(spikes), len(freq)))
@@ -82,6 +109,24 @@ def spectra(stimulus, spikes, dt, nfft):
 
 
 def rate(time, spikes, sigma):
+    """ Firing rate computed by kernel convolution.
+
+    Parameters
+    ----------
+    time: ndarray of float
+        Times at which firing rate is evaluated.
+    spikes: list of ndarray of float
+        Spike times.
+    sigma: float
+       Width of the Gaussian kernel as a standard deviation.
+
+    Returns
+    -------
+    rate: ndarray of float
+        Firing rate of convolved spike trains averaged over trials.
+    ratesd: ndarray of float
+        Corresponding standard deviation.
+    """
     kernel = norm.pdf(time[time < 8*sigma], loc=4*sigma, scale=sigma)
     rates = np.zeros((len(spikes), len(time)))
     xtime = np.append(time, time[-1] + time[1] - time[0])
