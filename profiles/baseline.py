@@ -14,7 +14,7 @@ import numpy as np
 from scipy.stats import gaussian_kde
 
 
-def interval_statistics(spikes, sigma=1e4, maxisi=0.1):
+def interval_statistics(spikes, sigma=1e-4, maxisi=0.1):
     """ Statistics and kde of interspike intervals.
 
     Parameters
@@ -146,8 +146,9 @@ def cyclic_rate(spikes, cycles, sigma=0.05):
         Times of full periods. A single number indicates the period
         of the periodic signal.
     sigma: float
-        Standard deviation of Gaussian kernel used for for kde
-        of interspike intervals. Between 0 and 1, 1 corresponds to a full period.
+        Standard deviation of Gaussian kernel used for the kde
+        of interspike intervals.
+        Between 0 and 1, 1 corresponds to a full period.
 
     Returns
     -------
