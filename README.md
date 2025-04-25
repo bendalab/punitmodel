@@ -8,11 +8,13 @@ P-unit electroreceptors of *Apteronotus leptorhynchus*.
 
 Model parameters are stored in csv files.
 
-- `models.csv`: the original model parameters.
+- `models.csv`: the best fitting models from both fitting attemps.
+  Use these models!
+- `models_old.csv`: the original model parameters.
+  `goodcells.dat` contains in each line a cell identifier of those
+   cells where the models from `models_old.csv` fit the cells reasonably well.
 - `models_202106.csv`: model parameters from a newer fitting attempt.
 
-- `goodcells.dat` contains in each line a cell identifier of those
-  cells where the models fit the cells reasonably well.
 
 ![2012-12-21-am](docs/2012-12-21-am-invivo-1.png)
 
@@ -41,11 +43,12 @@ frequency is in the table with the model parameters.
 
 ## Profiles
 
-In `profiles/` the python script `punitprofiles.py` generates for each model cell a
-pdf with plots showing basic properties of the model in comparison o
-the real cell's data. The plots are placed into the `profiles/plots/` folder.
-In addition, some basic properties of the cells and the models are stored in
-`profiles/punitdata.csv` and `profiles/modeldata.csv`, respectively.
+In `profiles/` the python script `punitprofiles.py` generates for each
+model cell a pdf with plots showing basic properties of the model in
+comparison o the real cell's data. The plots are placed into the
+`profiles/plots*/` folder.  In addition, some basic properties of the
+cells and the models are stored in `profiles/punitdata.csv` and
+`profiles/model*data.csv`, respectively.
 
 The image of the example cell shown above was generated wih this script.
 
