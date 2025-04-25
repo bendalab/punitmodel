@@ -4,8 +4,12 @@ Spectral analysis of neuronal responses.
 ## Functions
 
 - `whitenoise()`: band-limited white noise.
-- `spectra()`: stimulus- and response power spectra, and cross spectrum.
 - `rate()`: firing rate computed by kernel convolution.
+- `spectra()`: stimulus- and response power spectra, and cross spectrum.
+- `susceptibilities()`: stimulus- and response spectra up to second order.
+- `diag_projection()`: projection of the chi2 matrix onto its diagonal.
+- `hor_projection()`: horizontal projection of the chi2 matrix.
+- `peakedness()`: normalized size of a peak expected around a specific frequency.
 
 """
 
@@ -68,46 +72,6 @@ def whitenoise(cflow, cfup, dt, duration, rng=np.random.default_rng()):
     return noise[:n]*sigma
 
 
-def spectra(stimulus, spikes, dt, nfft):
-    """ Stimulus- and response power spectra, and cross spectrum.
-
-    Parameters
-    ----------
-    stimulus: ndarray of float
-        Stimulus waveform with sampling interval 'dt'.
-    spikes: list of ndarrays of float
-        Spike times in response to the stimulus.
-    dt: float
-        Sampling interval of stimulus and resolution of the binary spike train.
-    nfft: int
-        Number of samples used for each Fourier transformation.
-
-    Returns
-    -------
-    freqs: ndarray of float
-        The frequencies corresponding to the spectra.
-    pss: ndarray of float
-        Power spectrum of the stimulus.
-    prr: ndarray of float
-        Power spectrum of the response averaged over trials.
-    psr: ndarray of complex
-        Cross spectrum between stimulus and response averaged over trials.
-    """
-    time = np.arange(len(stimulus))*dt
-    freq, pss = welch(stimulus, fs=1/dt, nperseg=nfft, noverlap=nfft//2)
-    prr = np.zeros((len(spikes), len(freq)))
-    prs = np.zeros((len(spikes), len(freq)), dtype=complex)
-    for i, spiket in enumerate(spikes):
-        b, _ = np.histogram(spiket, time)
-        b = b / dt
-        f, rr = welch(b - np.mean(b), fs=1/dt, nperseg=nfft, noverlap=nfft//2)
-        f, rs = csd(b - np.mean(b), stimulus,
-                    fs=1/dt, nperseg=nfft, noverlap=nfft//2)
-        prr[i] = rr
-        prs[i] = rs
-    return freq, pss, np.mean(prr, 0), np.mean(prs, 0)
-
-
 def rate(time, spikes, sigma):
     """ Firing rate computed by kernel convolution.
 
@@ -134,4 +98,263 @@ def rate(time, spikes, sigma):
         b, _ = np.histogram(spiket, xtime)
         rates[i] = np.convolve(b, kernel, 'same')
     return np.mean(rates, 0), np.std(rates, 0)
+
+
+def spectra(stimulus, spikes, dt, nfft):
+    """Stimulus- and response power spectra, and cross spectrum.
+
+    Compute the complex-valued transfer function (first-order
+    susceptibility) and the stimulus-response coherence like this:
+
+    ```
+    freqs, pss, prr, prs = spectra(stimulus, spikes, dt, nfft)
+    transfer = prs/pss
+    coherence = np.abs(prs)**2/pss/prr
+    ```
+
+    The gain of the transfer function is the absolute value of the
+    transfer function:
+
+    ```
+    gain = np.abs(prs)/pss
+    ```
+
+    Parameters
+    ----------
+    stimulus: ndarray of float
+        Stimulus waveform with sampling interval 'dt'.
+    spikes: list of ndarrays of float
+        Spike times in response to the stimulus.
+    dt: float
+        Sampling interval of stimulus and resolution of the binary spike train.
+    nfft: int
+        Number of samples used for each Fourier transformation.
+
+    Returns
+    -------
+    freqs: ndarray of float
+        The frequencies corresponding to the spectra.
+    pss: ndarray of float
+        Power spectrum of the stimulus.
+    prr: ndarray of float
+        Power spectrum of the response averaged over trials.
+    prs: ndarray of complex
+        Cross spectrum between stimulus and response averaged over trials.
+
+    """
+    time = np.arange(len(stimulus))*dt
+    freq, pss = welch(stimulus, fs=1/dt, nperseg=nfft, noverlap=nfft//2)
+    prr = np.zeros((len(spikes), len(freq)))
+    prs = np.zeros((len(spikes), len(freq)), dtype=complex)
+    for i, spiket in enumerate(spikes):
+        b, _ = np.histogram(spiket, time)
+        b = b / dt
+        f, rr = welch(b - np.mean(b), fs=1/dt, nperseg=nfft, noverlap=nfft//2)
+        f, rs = csd(b - np.mean(b), stimulus,
+                    fs=1/dt, nperseg=nfft, noverlap=nfft//2)
+        prr[i] = rr
+        prs[i] = rs
+    return freq, pss, np.mean(prr, 0), np.mean(prs, 0)
+
+
+def susceptibilities(stimulus, spikes, dt=0.0005, nfft=2**9):
+    """ Stimulus- and response spectra up to second order.
+
+    Compute the complex-valued transfer function (first-order
+    susceptibility) and the stimulus-response coherence like this:
+
+    ```
+    freqs, pss, prr, prs, prss, n = susceptibilities(stimulus, spikes, dt, nfft)
+    transfer = prs/pss
+    coherence = np.abs(prs)**2/pss/prr
+    ```
+
+    The gain of the transfer function is the absolute value of the
+    transfer function:
+
+    ```
+    gain = np.abs(prs)/pss
+    ```
+
+    The second-order susceptibility can be computed like this:
+
+    ```
+    chi2 = prss*0.5/np.sqrt(pss.reshape(1, -1)*pss.reshape(-1, 1))
+    ```
+
+    Parameters
+    ----------
+    stimulus: ndarray of float
+        Stimulus waveform with sampling interval 'dt'.
+    spikes: list of ndarrays of float
+        Spike times in response to the stimulus.
+    dt: float
+        Sampling interval of stimulus and resolution of the binary spike train.
+    nfft: int
+        Number of samples used for each Fourier transformation.
+
+    Returns
+    -------
+    freqs: ndarray of float
+        The frequencies corresponding to the spectra.
+    pss: ndarray of float
+        Power spectrum of the stimulus.
+    prr: ndarray of float
+        Power spectrum of the response averaged over segments.
+    prs: ndarray of complex
+        Cross spectrum between stimulus and response averaged over segments.
+    prss: ndarray of complex
+        Cross bispectrum between stimulus and response averaged over segments.
+    n: int
+        Number of segments.
+    """
+    freqs = np.fft.fftfreq(nfft, dt)
+    idx = np.argmin(freqs)
+    freqs = np.roll(freqs, -idx)
+    f0 = np.argmin(np.abs(freqs))   # index of zero frequency
+    fidx = np.arange(len(freqs))
+    fsum_idx = fidx.reshape(-1, 1) + fidx.reshape(1, -1) - f0
+    fsum_idx[fsum_idx < 0] = 0
+    fsum_idx[fsum_idx >= len(fidx)] = len(fidx) - 1
+    f0 = len(freqs)//4
+    f1 = 3*len(freqs)//4
+    segments = range(0, len(stimulus) - nfft, nfft)
+    # stimulus:
+    p_ss = np.zeros(len(freqs))
+    fourier_s = np.zeros((len(segments), len(freqs)), complex)
+    n = 0
+    for j, k in enumerate(segments):
+        fourier_s[j] = np.fft.fft(stimulus[k:k + nfft], n=nfft)
+        fourier_s[j] = np.roll(fourier_s[j], -idx)
+        p_ss += np.abs(fourier_s[j]*np.conj(fourier_s[j]))
+        n += 1
+    p_ss /= n
+    # response spectra:
+    time = np.arange(len(stimulus))*dt
+    p_rr = np.zeros(len(freqs))
+    p_rs = np.zeros(len(freqs), complex)
+    p_rss = np.zeros((len(freqs), len(freqs)), complex)
+    n = 0
+    for i, spiket in enumerate(spikes):
+        b, _ = np.histogram(spiket, time)
+        b = b / dt
+        for j, k in enumerate(segments):
+            # stimulus:
+            fourier_s1 = fourier_s[j].reshape(len(fourier_s[j]), 1)
+            fourier_s2 = fourier_s[j].reshape(1, len(fourier_s[j]))
+            fourier_s12 = np.conj(fourier_s1)*np.conj(fourier_s2)
+            # response:
+            fourier_r = np.fft.fft(b[k:k + nfft] - np.mean(b), n=nfft)
+            fourier_r = np.roll(fourier_r, -idx)
+            p_rr += np.abs(fourier_r*np.conj(fourier_r))
+            p_rs += np.conj(fourier_s[j])*fourier_r
+            p_rss += fourier_s12*fourier_r[fsum_idx]
+            n += 1
+    return freqs[f0:f1], p_ss[f0:f1], p_rr[f0:f1]/n, p_rs[f0:f1]/n, p_rss[f0:f1, f0:f1]/n, n
+
+
+def diag_projection(freqs, chi2, fmax):
+    """ Projection of the chi2 matrix onto its diagonal.
+
+    Adapted from https://stackoverflow.com/questions/71362928/average-values-over-all-offset-diagonals
+
+    Parameters
+    ----------
+    freqs: ndarray of float
+        Frequencies of the chi2 matrix.
+    chi2: 2-D ndarray of float
+        Second-order susceptibility matrix.
+    fmax: float
+        Maximum frequency for the projection.
+
+    Returns
+    -------
+    dfreqs: ndarray of float
+        Frequencies of the projection.
+    diagp: ndarray of float
+        Projections of the chi2 matrix onto its diagonal.
+        That is, averages over the anti-diagonals.
+    """
+    i0 = np.argmin(freqs < 0)
+    i1 = np.argmax(freqs > fmax)
+    if i1 == 0:
+        i1 = len(freqs)
+    chi2 = chi2[i0:i1, i0:i1]
+    n = chi2.shape[0]
+    diagp = np.zeros(n*2-1, dtype=float)
+    for i in range(n):
+        diagp[i:i + n] += chi2[i]
+    diagp[0:n] /= np.arange(1, n+1, 1, dtype=float)
+    diagp[n:]  /= np.arange(n-1, 0, -1, dtype=float)
+    dfreqs = np.arange(len(diagp))*(freqs[i0 + 1] - freqs[i0]) + freqs[i0]
+    return dfreqs, diagp
+
+
+def hor_projection(freqs, chi2, fmax):
+    """ Horizontal projection of the chi2 matrix.
+
+    Parameters
+    ----------
+    freqs: ndarray of float
+        Frequencies of the chi2 matrix.
+    chi2: 2-D ndarray of float
+        Second-order susceptibility matrix.
+    fmax: float
+        Maximum frequency for the projection.
+
+    Returns
+    -------
+    hfreqs: ndarray of float
+        Frequencies of the projection.
+    horp: ndarray of float
+        Projections of the chi2 matrix onto its x-axis.
+        That is, averages over columns.
+    """
+    i0 = np.argmin(freqs < 0)
+    i1 = np.argmax(freqs > fmax)
+    if i1 == 0:
+        i1 = len(freqs)
+    hfreqs = freqs[i0:i1]
+    chi2 = chi2[i0:i1, i0:i1]
+    horp = np.mean(chi2, 1)
+    return hfreqs, horp
+
+
+def peakedness(freqs, projection, fbase, median=True, df=5):
+    """ Normalized size of a peak expected around a specific frequency.
+
+    Parameters
+    ----------
+    freqs: ndarray of float
+        Frequencies of the projection.
+    projection: ndarray of float
+        Projection of the chi2 matrix.
+    fbase: float
+        The neurons baseline-frequency.
+        That is, the frequency where a peak is expected in the projection.
+    median: bool
+        If True, normalize the peak height by the median of the projection.
+        Otherwise (default), normalize by averaged values of the projection
+        close to the fbase frequency.
+    df: float
+        Sets the range around fbase where to look for a peak in the projection.
+
+    Returns
+    -------
+    p: float
+        The normalized height of the peak at fbase.
+    """
+    if median:
+        baseline = np.median(projection)
+    else:
+        bleft = np.mean(projection[(freqs >= fbase - 4*df) & (freqs <= fbase - 2*df)])
+        bright = np.mean(projection[(freqs >= fbase + 2*df) & (freqs <= fbase + 4*df)])
+        baseline = bleft if np.isnan(bright) else 0.5*(bleft + bright)
+    snippet = projection[(freqs > fbase - df) & (freqs < fbase + df)]
+    if len(snippet) == 0:
+        return 1
+    peak = np.max(snippet)
+    if np.isnan(peak/baseline):
+        print(peak, baseline, bleft, bright, median)
+    return peak/baseline
 
