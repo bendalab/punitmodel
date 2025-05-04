@@ -72,9 +72,7 @@ def serial_correlations(spikes, max_lag=10):
         First one is zero, last one is `max_lag`.
     corrs: ndarray of floats
         Serial correlations for all `lags`.
-    low: float
-        0.1% percentile of the null hypothesis of no correlation.
-    high: float
+    null: float
         99.9% percentile of the null hypothesis of no correlation.
     """
     intervals = np.diff(spikes)
@@ -91,7 +89,7 @@ def serial_correlations(spikes, max_lag=10):
         yintervals = rng.permutation(intervals)
         perm_corrs[k] = np.corrcoef(xintervals, yintervals)[0,1]
     low, high = np.quantile(perm_corrs, (0.001, 0.999))
-    return lags, corrs, low, high
+    return lags, corrs, max(-low, high)
 
 
 def vector_strength(spikes, cycles):

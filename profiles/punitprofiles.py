@@ -145,7 +145,7 @@ def baseline_model(EODf, model_params, tmax=10):
     tmax: float
         Time to simulate baseline activity.
     """
-    deltat = model_params["deltat"]
+    deltat = model_params['deltat']
     time = np.arange(0, tmax, deltat)
     # baseline EOD with amplitude 1:
     stimulus = np.sin(2*np.pi*EODf*time)
@@ -154,41 +154,43 @@ def baseline_model(EODf, model_params, tmax=10):
     return spikes
 
 
-def analyse_baseline(EODf, data_spikes, data_eods, model_spikes,
+def analyse_baseline(EODf, data_spikes, data_eods, model_spikes, baseline_tmax,
                      data={}, model={}, max_eods=15.5, max_lag=15):
     """ Compute and plot baseline statistics for data and model spikes. """
     eod_period = 1/EODf
     # analyse data:
     data_isi, data_kde, data_rate, data_cv = \
         interval_statistics(data_spikes, sigma=0.05*eod_period, maxisi=max_eods*eod_period)
-    data_lags, data_corrs, data_low, data_high = serial_correlations(data_spikes, max_lag=max_lag)
+    data_lags, data_corrs, data_null = serial_correlations(data_spikes, max_lag=max_lag)
     data_vs = vector_strength(data_spikes, data_eods)
     data_cphase, data_crate = cyclic_rate(data_spikes, data_eods, sigma=0.02)
     # analyse model:
     model_isi, model_kde, model_rate, model_cv = \
         interval_statistics(model_spikes, sigma=0.05*eod_period, maxisi=max_eods*eod_period)
-    model_lags, model_corrs, model_low, model_high = serial_correlations(model_spikes, max_lag=max_lag)
+    model_lags, model_corrs, model_null = serial_correlations(model_spikes, max_lag=max_lag)
     model_vs = vector_strength(model_spikes, eod_period)
     model_cphase, model_crate = cyclic_rate(model_spikes, eod_period, sigma=0.02)
     data['isis'] = data_isi
     data['hist'] = data_kde
-    data['rate'] = data_rate
-    data['CV'] = data_cv
+    data['nspikesbase'] = len(data_spikes)
+    data['durationbase/s'] = data_eods[-1] - data_eods[0]
+    data['ratebase/Hz'] = data_rate
+    data['cvbase'] = data_cv
     data['lags'] = data_lags
-    data['corrs'] = data_corrs
-    data['corrs_low'] = data_low
-    data['corrs_high'] = data_high
+    data['serialcorrs'] = data_corrs
+    data['serialcorrnull'] = data_null
     data['vectorstrength'] = data_vs
     data['cyclic_phases'] = data_cphase
     data['cyclic_rates'] = data_crate
     model['isis'] = model_isi
     model['hist'] = model_kde
-    model['rate'] = model_rate
-    model['CV'] = model_cv
+    model['nspikesbase'] = len(model_spikes)
+    model['durationbase/s'] = baseline_tmax
+    model['ratebase/Hz'] = model_rate
+    model['cvbase'] = model_cv
     model['lags'] = model_lags
-    model['corrs'] = model_corrs
-    model['corrs_low'] = model_low
-    model['corrs_high'] = model_high
+    model['serialcorrs'] = model_corrs
+    model['serialcorrnull'] = model_null
     model['vectorstrength'] = model_vs
     model['cyclic_phases'] = model_cphase
     model['cyclic_rates'] = model_crate
@@ -205,23 +207,23 @@ def plot_baseline(axi, axc, axv, axb, s, EODf, data, model):
     axi.fill_between(1000*model['isis'], model['hist']/1000, **s.fsModel)
     axi.plot(1000*data['isis'], data['hist']/1000, **s.lsData)
     axi.plot(1000*model['isis'], model['hist']/1000, **s.lsModel)
-    axi.text(1, 0.95, f'$r={data["rate"]:.0f}$Hz',
+    axi.text(1, 0.95, f'$r={data["ratebase/Hz"]:.0f}$Hz',
             transform=axi.transAxes, ha='right')
-    axi.text(1, 0.83, f'$CV^{{(d)}}={data["CV"]:.2f}$',
+    axi.text(1, 0.83, f'$CV^{{(d)}}={data["cvbase"]:.2f}$',
             transform=axi.transAxes, ha='right')
-    axi.text(1, 0.71, f'$CV^{{(m)}}={model["CV"]:.2f}$',
+    axi.text(1, 0.71, f'$CV^{{(m)}}={model["cvbase"]:.2f}$',
             transform=axi.transAxes, ha='right')
     axi.set_xlabel('ISI', 'ms')
     axi.set_ylabel('pdf', '1/ms')
     axi.set_xticks_delta(10)
     # plot serial correlations:
-    axc.axhspan(data['corrs_low'], data['corrs_high'], **s.fsData)
+    axc.axhspan(-data['serialcorrnull'], data['serialcorrnull'], **s.fsData)
     axc.axhline(0, **s.lsGrid)
-    axc.plot(data['lags'], data['corrs'], label='data', **s.lpsData)
-    axc.plot(model['lags'], model['corrs'], label='model', **s.lpsModel)
-    axc.text(1, 0.95, f'$\\rho^{{(d)}}_1={data["corrs"][1]:.2f}$',
+    axc.plot(data['lags'], data['serialcorrs'], label='data', **s.lpsData)
+    axc.plot(model['lags'], model['serialcorrs'], label='model', **s.lpsModel)
+    axc.text(1, 0.95, f'$\\rho^{{(d)}}_1={data["serialcorrs"][1]:.2f}$',
             transform=axc.transAxes, ha='right')
-    axc.text(1, 0.83, f'$\\rho^{{(m)}}_1={model["corrs"][1]:.2f}$',
+    axc.text(1, 0.83, f'$\\rho^{{(m)}}_1={model["serialcorrs"][1]:.2f}$',
             transform=axc.transAxes, ha='right')
     axc.set_ylim(-1, 1)
     axc.set_xlabel('Lag $k$')
@@ -242,11 +244,11 @@ def plot_baseline(axi, axc, axv, axb, s, EODf, data, model):
     axv.set_xticks_pifracs(4)
     axv.set_yticks_blank()
     # comparison:
-    plot_comparison(axb[0], s, '$CV$', np.abs(data['CV'] - model['CV']))
+    plot_comparison(axb[0], s, '$CV$', np.abs(data['cvbase'] - model['cvbase']))
     axb[0].set_visible(False)
-    plot_comparison(axb[1], s, '$CV$', np.abs(data['CV'] - model['CV']))
-    plot_comparison(axb[2], s, '$\\rho_1$', np.abs(data['corrs'][1] - model['corrs'][1]))
-    plot_comparison(axb[3], s, '$VS$', np.abs(data["vectorstrength"] - model["vectorstrength"]))
+    plot_comparison(axb[1], s, '$CV$', np.abs(data['cvbase'] - model['cvbase']))
+    plot_comparison(axb[2], s, '$\\rho_1$', np.abs(data['serialcorrs'][1] - model['serialcorrs'][1]))
+    plot_comparison(axb[3], s, '$VS$', np.abs(data['vectorstrength'] - model['vectorstrength']))
 
 
 def ficurve_data(data_path, cell):
@@ -292,7 +294,7 @@ def firate_model(EODf, model_params, contrasts, t0=-0.4, t1=0.2):
     t1: float
         End of simulation after the step in seconds.
     """
-    deltat = model_params["deltat"]
+    deltat = model_params['deltat']
     time = np.arange(t0, t1, deltat)
     rates = [None] * len(contrasts)
     for i, contrast in enumerate(contrasts):
@@ -383,10 +385,10 @@ def fit_ficurves(EODf, contrasts, fonset, fss, data={}):
     fss_slope, fss_b = np.polyfit(contrasts[sel], fss[sel], deg=1)
     fss_contrasts = np.linspace(min_contr, max_contr, 200)
     fss_line = fss_slope*fss_contrasts + fss_b
-    data['fon_slope'] = fon_slope
+    data['fon_slope/Hz'] = fon_slope
     data['fon_contrasts'] = fon_contrasts 
     data['fon_line'] = fon_line 
-    data['fss_slope'] = fss_slope 
+    data['fss_slope/Hz'] = fss_slope 
     data['fss_contrasts'] = fss_contrasts
     data['fss_line'] = fss_line
     return data
@@ -397,7 +399,7 @@ def plot_ficurves(ax, axc, s, EODf, data_contrasts, data_fonset, data_fss,
     """ Plot fI curves. """
     ax.axvline(0, **s.lsGrid)
     ax.axhline(EODf, **s.lsGrid)
-    ax.axhline(data['rate'], **s.lsBase)
+    ax.axhline(data['ratebase/Hz'], **s.lsBase)
     ax.plot(100*model_contrasts, model_fss, label=r'$f_{\infty}(I)$', **s.lsSS)
     ax.plot(100*model_contrasts, model_fonset, label=r'$f_0(I)$', **s.lsOnset)
     sel = (data_contrasts >= model_contrasts[0]) & (data_contrasts <= model_contrasts[-1])
@@ -411,19 +413,19 @@ def plot_ficurves(ax, axc, s, EODf, data_contrasts, data_fonset, data_fss,
     # comparison onset slopes:
     ax.plot(100*data['fon_contrasts'], data['fon_line'], **s.lsDataLine)
     ax.plot(100*model['fon_contrasts'], model['fon_line'], **s.lsModelLine)
-    plot_comparison(axc[0], s, '$s$', np.abs(model['fon_slope'] - data['fon_slope'])/data['fon_slope'])
+    plot_comparison(axc[0], s, '$s$', np.abs(model['fon_slope/Hz'] - data['fon_slope/Hz'])/data['fon_slope/Hz'])
     # comparison ss slopes:
     ax.plot(100*data['fss_contrasts'], data['fss_line'], **s.lsDataLine)
     ax.plot(100*model['fss_contrasts'], model['fss_line'], **s.lsModelLine)
     ax.legend(loc='upper left')
-    plot_comparison(axc[2], s, '$s$', np.abs(model['fss_slope'] - data['fss_slope'])/data['fss_slope'])
+    plot_comparison(axc[2], s, '$s$', np.abs(model['fss_slope/Hz'] - data['fss_slope/Hz'])/data['fss_slope/Hz'])
     # comparison chi squared:
     model_idxs = [np.argmin(np.abs(model_contrasts - data_contrasts[i]))
                   for i in range(len(data_contrasts))]
     chifon = np.sum((data_fonset - model_fonset[model_idxs])**2)
     chifss = np.sum((data_fss - model_fss[model_idxs])**2)
     normfon = len(data_contrasts)*(EODf/4)**2
-    normfss = len(data_contrasts)*(data['rate']/2)**2
+    normfss = len(data_contrasts)*(data['ratebase/Hz']/2)**2
     plot_comparison(axc[1], s, r'$\chi^2 f_{on}$', chifon/normfon)
     plot_comparison(axc[3], s, r'$\chi^2 f_{ss}$', chifss/normfss)
 
@@ -464,7 +466,7 @@ def spectra_model(EODf, model_params, contrasts,
     trials: int
         Number of trials.
     """
-    deltat = model_params["deltat"]
+    deltat = model_params['deltat']
     time = np.arange(0, tinit + tmax, deltat)
     # whitenoise stimulus with stdev = 1:
     rng = np.random.default_rng()
@@ -536,7 +538,7 @@ def plot_raster(ax, s, time, am, frate, fratesd, spikes, twin):
     axs.show_spines('')
     axs.axhline(0, **s.lsGrid)
     axs.plot(1e3*(time[sel] - t0), am[sel], clip_on=False, **s.lsStim)
-    axs.text(-5, 0, '10\,\%', ha='right', va='center')
+    axs.text(-5, 0, r'10\,\%', ha='right', va='center')
     
     
 def check_baseeod(data_path, cell):
@@ -624,7 +626,8 @@ def main(model_path):
         # baseline:
         data_spikes, data_eods = baseline_data(data_path, cell)
         model_spikes = baseline_model(EODf, model_params, baseline_tmax)
-        data, model = analyse_baseline(EODf, data_spikes, data_eods, model_spikes,
+        data, model = analyse_baseline(EODf, data_spikes, data_eods,
+                                       model_spikes, baseline_tmax,
                                        data=data, model=model,
                                        max_eods=15.5, max_lag=15)
         plot_baseline(axs[0, 0], axs[0, 1], axs[0, 2], axc[0:2,:].ravel(), s,
@@ -635,7 +638,8 @@ def main(model_path):
         time, rates = firate_model(EODf, model_params, model_contrasts)
         model_fonset, model_fss, baseline = ficurves(time, rates)
         data = fit_ficurves(EODf, data_contrasts, data_fonset, data_fss, data)
-        model = fit_ficurves(EODf, model_contrasts, model_fonset, model_fss, model)
+        model = fit_ficurves(EODf, model_contrasts, model_fonset, model_fss,
+                             model)
         plot_ficurves(axs[1, 0], axc[2:4,:].ravel(), s, EODf,
                       data_contrasts, data_fonset, data_fss,
                       model_contrasts, model_fonset, model_fss, data, model)
@@ -649,8 +653,10 @@ def main(model_path):
             spectra_model(EODf, model_params, spectra_contrasts,
                           fcutoff, 0.0005, 2**9, tinit=0.5, tmax=20.0,
                           trials=20)
-        frate, fratesd = rate(time, spikes, 0.002)
-        model['respmod'] = np.std(frate)
+        for ksd in [1, 2, 4]:
+            frate, fratesd = rate(time, spikes, 0.001*ksd)
+            model[f'respmod{ksd}/Hz'] = np.std(frate)
+        frate, fratesd = rate(time, spikes, 0.001)
         plot_raster(axn[0], s, time, am, frate, fratesd, spikes, 0.1)
         plot_transfers(axn[1], s, freq, transfers, spectra_contrasts, fcutoff)
         plot_coherences(axn[2], s, freq, coheres, spectra_contrasts, fcutoff)
@@ -671,11 +677,13 @@ def main(model_path):
     data = pd.DataFrame(data_dicts)
     model = pd.DataFrame(model_dicts)
     data = data.drop(columns=['isis', 'hist', 'lags', 'cyclic_phases', 'cyclic_rates', 'fon_contrasts', 'fon_line', 'fss_contrasts', 'fss_line'])
-    data.corrs = [c[1] for c in data.corrs]
+    data.serialcorrs = [c[1] for c in data.serialcorrs]
+    data.rename(columns=dict(serialcorrs='serialcorr1'), inplace=True)
     model = model.drop(columns=['isis', 'hist', 'lags', 'cyclic_phases', 'cyclic_rates', 'fon_contrasts', 'fon_line', 'fss_contrasts', 'fss_line'])
-    model.corrs = [c[1] for c in model.corrs]
-    data.to_csv('punitdata.csv')
-    model.to_csv('model' + suffix + 'data.csv')
+    model.serialcorrs = [c[1] for c in model.serialcorrs]
+    model.rename(columns=dict(serialcorrs='serialcorr1'), inplace=True)
+    data.to_csv('punitdata.csv', index_label='index')
+    model.to_csv('model' + suffix + 'data.csv', index_label='index')
 
         
 if __name__ == '__main__':
