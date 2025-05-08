@@ -467,7 +467,7 @@ def spectra_model(EODf, model_params, contrasts,
                           np.arange(len(am))*dt, am)
     transfers = []
     coheres = []
-    spikesc = None
+    spikess = []
     for i, contrast in enumerate(contrasts):
         # generate EOD stimulus with an amplitude step:
         stimulus = np.sin(2*np.pi*EODf*time)
@@ -480,13 +480,12 @@ def spectra_model(EODf, model_params, contrasts,
             spiket = simulate(stimulus, **model_params)
             #spikes.append(spiket[spiket > tinit] - tinit)
             spikes.append(spiket)
-        if i == 1:
-            spikesc = spikes
         freq, pss, prr, prs = spectra(contrast*am,
                                       spikes, dt, nfft)
         transfers.append(np.abs(prs)/pss)
         coheres.append(np.abs(prs)**2/pss/prr)
-    return freq, transfers, coheres, np.arange(len(am))*dt, am, spikes
+        spikess.append(spikes)
+    return freq, transfers, coheres, np.arange(len(am))*dt, am, spikess
 
 
 def analyse_spectra(contrast, freqs, transfer, cohere, fcutoff, model):
@@ -597,6 +596,7 @@ def main(model_path):
     fcutoff = 300
     data_dicts = []
     model_dicts = []
+    modelspectral_dicts = []
     
     # load model parameter:
     parameters = load_models(model_path)
@@ -656,13 +656,22 @@ def main(model_path):
             spectra_model(EODf, model_params, spectra_contrasts,
                           fcutoff, 0.0005, 2**9, tinit=0.5, tmax=20.0,
                           trials=20)
+        for k in range(len(spectra_contrasts)):
+            modelspectral = dict(model)
+            for ksd in [1, 2, 4]:
+                frate, fratesd = rate(time, spikes[k], 0.001*ksd)
+                modelspectral[f'respmod{ksd}/Hz'] = np.std(frate)
+            analyse_spectra(spectra_contrasts[k], freq, transfers[k],
+                            coheres[k], fcutoff, modelspectral)
+            modelspectral_dicts.append(modelspectral)
+            
         for ksd in [1, 2, 4]:
-            frate, fratesd = rate(time, spikes, 0.001*ksd)
+            frate, fratesd = rate(time, spikes[-1], 0.001*ksd)
             model[f'respmod{ksd}/Hz'] = np.std(frate)
-        analyse_spectra(spectra_contrasts[1], freq, transfers[1],
-                        coheres[1], fcutoff, model)
-        frate, fratesd = rate(time, spikes, 0.001)
-        plot_raster(axn[0], s, time, am, frate, fratesd, spikes, 0.1)
+        analyse_spectra(spectra_contrasts[-1], freq, transfers[-1],
+                        coheres[-1], fcutoff, model)
+        frate, fratesd = rate(time, spikes[-1], 0.001)
+        plot_raster(axn[0], s, time, am, frate, fratesd, spikes[-1], 0.1)
         plot_transfers(axn[1], s, freq, transfers, spectra_contrasts, fcutoff)
         plot_coherences(axn[2], s, freq, coheres, spectra_contrasts, fcutoff)
 
@@ -677,19 +686,24 @@ def main(model_path):
         data_dicts.append(data)
         model_dicts.append(model)
 
-        if len(model_dicts) > 3:
-            break
+        #if len(model_dicts) > 2:
+        #    break
 
     data = pd.DataFrame(data_dicts)
     model = pd.DataFrame(model_dicts)
+    modelspectral = pd.DataFrame(modelspectral_dicts)
     data = data.drop(columns=['isis', 'hist', 'lags', 'cyclic_phases', 'cyclic_rates', 'fon_contrasts', 'fon_line', 'fss_contrasts', 'fss_line'])
     data.serialcorrs = [c[1] for c in data.serialcorrs]
     data.rename(columns=dict(serialcorrs='serialcorr1'), inplace=True)
     model = model.drop(columns=['isis', 'hist', 'lags', 'cyclic_phases', 'cyclic_rates', 'fon_contrasts', 'fon_line', 'fss_contrasts', 'fss_line'])
     model.serialcorrs = [c[1] for c in model.serialcorrs]
     model.rename(columns=dict(serialcorrs='serialcorr1'), inplace=True)
+    modelspectral = modelspectral.drop(columns=['isis', 'hist', 'lags', 'cyclic_phases', 'cyclic_rates', 'fon_contrasts', 'fon_line', 'fss_contrasts', 'fss_line'])
+    modelspectral.serialcorrs = [c[1] for c in modelspectral.serialcorrs]
+    modelspectral.rename(columns=dict(serialcorrs='serialcorr1'), inplace=True)
     data.to_csv('punit' + suffix + 'data.csv', index_label='index')
     model.to_csv('model' + suffix + 'data.csv', index_label='index')
+    modelspectral.to_csv('model' + suffix + 'spectraldata.csv', index_label='index')
 
         
 if __name__ == '__main__':

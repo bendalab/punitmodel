@@ -47,8 +47,8 @@ In `profiles/` the python script `punitprofiles.py` generates for each
 model cell a pdf with plots showing basic properties of the model in
 comparison o the real cell's data. The plots are placed into the
 `profiles/plots*/` folder.  In addition, some basic properties of the
-cells and the models are stored in `profiles/punitdata.csv` and
-`profiles/model*data.csv`, respectively.
+cells and the models are stored in `profiles/punitdata.csv`,
+`profiles/model*data.csv`, and `profiles/model*spectraldata.csv`, respectively.
 
 The image of the example cell shown above was generated wih this script.
 
