@@ -155,7 +155,7 @@ def baseline_model(EODf, model_params, tmax=10):
     return spikes
 
 
-def analyse_baseline(EODf, spikes, eods, data={}, max_eods=15.5,
+def analyse_baseline(EODf, spikes, eods, data, max_eods=15.5,
                      max_lag=15):
     """ Compute baseline statistics. """
     eod_period = 1/EODf
@@ -188,7 +188,6 @@ def analyse_baseline(EODf, spikes, eods, data={}, max_eods=15.5,
     data['burstfrac'] = bf
     data['burstfracthresh'] = bft
     data['burstthresh/s'] = thresh
-    return data
 
     
 def plot_baseline(axi, axc, axv, axb, s, EODf, data, model):
@@ -361,7 +360,7 @@ def sigmoid(x, x0, k, ymax):
     return ymax/(1 + np.exp(-k*(x - x0)))
 
 
-def fit_ficurves(EODf, contrasts, fonset, fss, data={}):
+def fit_ficurves(EODf, contrasts, fonset, fss, data):
     fon_contrasts = np.linspace(np.min(contrasts), np.max(contrasts), 200)
     # onset slopes:
     popt = [0.05, 0.03*EODf, EODf]
@@ -385,7 +384,6 @@ def fit_ficurves(EODf, contrasts, fonset, fss, data={}):
     data['fss_slope/Hz'] = fss_slope 
     data['fss_contrasts'] = fss_contrasts
     data['fss_line'] = fss_line
-    return data
 
     
 def plot_ficurves(ax, axc, s, EODf, data_contrasts, data_fonset, data_fss,
@@ -503,7 +501,6 @@ def analyse_spectra(contrast, freqs, transfer, cohere, fcutoff, model):
     idx = np.argmax(cohere)
     model['coherefpeak/Hz'] = freqs[idx]
     model['coherepeak'] = cohere[idx]
-    return model
 
 
 def plot_transfers(ax, s, freq, transfers, contrasts, fcutoff):
@@ -594,7 +591,8 @@ def main(model_path):
                      pt.lighter(s.lsPosContrast, 0.7),
                      pt.lighter(s.lsNegContrast, 0.4),
                      s.lsPosContrast]
-    spectra_contrasts = [0.05, 0.1, 0.2]
+    #spectra_contrasts = [0.05, 0.1, 0.2]
+    spectra_contrasts = [0.01, 0.03, 0.1]
     s.spectra_styles = [pt.lighter(s.lsSpec, 0.4), pt.lighter(s.lsSpec, 0.7), s.lsSpec]
     fcutoff = 300
     data_dicts = []
@@ -634,10 +632,8 @@ def main(model_path):
         # baseline:
         data_spikes, data_eods = baseline_data(data_path, cell)
         model_spikes = baseline_model(EODf, model_params, baseline_tmax)
-        data = analyse_baseline(EODf, data_spikes, data_eods, data,
-                                max_eods=15.5, max_lag=15)
-        model = analyse_baseline(EODf, model_spikes, baseline_tmax, model,
-                                 max_eods=15.5, max_lag=15)
+        analyse_baseline(EODf, data_spikes, data_eods, data, max_eods=15.5, max_lag=15)
+        analyse_baseline(EODf, model_spikes, baseline_tmax, model, max_eods=15.5, max_lag=15)
         plot_baseline(axs[0, 0], axs[0, 1], axs[0, 2], axc[0:2,:].ravel(), s,
                       EODf, data, model)
         
@@ -645,9 +641,8 @@ def main(model_path):
         data_contrasts, data_fonset, data_fss = ficurve_data(data_path, cell)
         time, rates = firate_model(EODf, model_params, model_contrasts)
         model_fonset, model_fss, baseline = ficurves(time, rates)
-        data = fit_ficurves(EODf, data_contrasts, data_fonset, data_fss, data)
-        model = fit_ficurves(EODf, model_contrasts, model_fonset, model_fss,
-                             model)
+        fit_ficurves(EODf, data_contrasts, data_fonset, data_fss, data)
+        fit_ficurves(EODf, model_contrasts, model_fonset, model_fss, model)
         plot_ficurves(axs[1, 0], axc[2:4,:].ravel(), s, EODf,
                       data_contrasts, data_fonset, data_fss,
                       model_contrasts, model_fonset, model_fss, data, model)
@@ -664,8 +659,8 @@ def main(model_path):
         for ksd in [1, 2, 4]:
             frate, fratesd = rate(time, spikes, 0.001*ksd)
             model[f'respmod{ksd}/Hz'] = np.std(frate)
-        model = analyse_spectra(spectra_contrasts[1], freq, transfers[1],
-                                coheres[1], fcutoff, model)
+        analyse_spectra(spectra_contrasts[1], freq, transfers[1],
+                        coheres[1], fcutoff, model)
         frate, fratesd = rate(time, spikes, 0.001)
         plot_raster(axn[0], s, time, am, frate, fratesd, spikes, 0.1)
         plot_transfers(axn[1], s, freq, transfers, spectra_contrasts, fcutoff)
@@ -682,8 +677,8 @@ def main(model_path):
         data_dicts.append(data)
         model_dicts.append(model)
 
-        #if len(model_dicts) > 3:
-        #    break
+        if len(model_dicts) > 3:
+            break
 
     data = pd.DataFrame(data_dicts)
     model = pd.DataFrame(model_dicts)
