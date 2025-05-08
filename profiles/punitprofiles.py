@@ -7,7 +7,8 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from model import simulate, load_models
 from eods import plot_eod_interval_hist
-from baseline import interval_statistics, serial_correlations, vector_strength, cyclic_rate
+from baseline import interval_statistics, burst_fraction, serial_correlations
+from baseline import vector_strength, cyclic_rate
 from spectral import whitenoise, spectra, rate
 import plottools.plottools as pt
 
@@ -154,47 +155,40 @@ def baseline_model(EODf, model_params, tmax=10):
     return spikes
 
 
-def analyse_baseline(EODf, data_spikes, data_eods, model_spikes, baseline_tmax,
-                     data={}, model={}, max_eods=15.5, max_lag=15):
-    """ Compute and plot baseline statistics for data and model spikes. """
+def analyse_baseline(EODf, spikes, eods, data={}, max_eods=15.5,
+                     max_lag=15):
+    """ Compute baseline statistics. """
     eod_period = 1/EODf
-    # analyse data:
-    data_isi, data_kde, data_rate, data_cv = \
-        interval_statistics(data_spikes, sigma=0.05*eod_period, maxisi=max_eods*eod_period)
-    data_lags, data_corrs, data_null = serial_correlations(data_spikes, max_lag=max_lag)
-    data_vs = vector_strength(data_spikes, data_eods)
-    data_cphase, data_crate = cyclic_rate(data_spikes, data_eods, sigma=0.02)
-    # analyse model:
-    model_isi, model_kde, model_rate, model_cv = \
-        interval_statistics(model_spikes, sigma=0.05*eod_period, maxisi=max_eods*eod_period)
-    model_lags, model_corrs, model_null = serial_correlations(model_spikes, max_lag=max_lag)
-    model_vs = vector_strength(model_spikes, eod_period)
-    model_cphase, model_crate = cyclic_rate(model_spikes, eod_period, sigma=0.02)
-    data['isis'] = data_isi
-    data['hist'] = data_kde
-    data['nspikesbase'] = len(data_spikes)
-    data['durationbase/s'] = data_eods[-1] - data_eods[0]
-    data['ratebase/Hz'] = data_rate
-    data['cvbase'] = data_cv
-    data['lags'] = data_lags
-    data['serialcorrs'] = data_corrs
-    data['serialcorrnull'] = data_null
-    data['vectorstrength'] = data_vs
-    data['cyclic_phases'] = data_cphase
-    data['cyclic_rates'] = data_crate
-    model['isis'] = model_isi
-    model['hist'] = model_kde
-    model['nspikesbase'] = len(model_spikes)
-    model['durationbase/s'] = baseline_tmax
-    model['ratebase/Hz'] = model_rate
-    model['cvbase'] = model_cv
-    model['lags'] = model_lags
-    model['serialcorrs'] = model_corrs
-    model['serialcorrnull'] = model_null
-    model['vectorstrength'] = model_vs
-    model['cyclic_phases'] = model_cphase
-    model['cyclic_rates'] = model_crate
-    return data, model
+    if isinstance(eods, (float, int)):
+        duration = eods
+        eods = eod_period
+    else:
+        duration = eods[-1] - eods[0]
+    isis, kde, rate, cv = interval_statistics(spikes,
+                                             sigma=0.05*eod_period,
+                                             maxisi=max_eods*eod_period)
+    lags, corrs, corrs_null = serial_correlations(spikes, max_lag=max_lag)
+    vs = vector_strength(spikes, eods)
+    cphase, crate = cyclic_rate(spikes, eods, sigma=0.02)
+    bf, bft, thresh = burst_fraction(spikes, EODf)
+    
+    data['isis'] = isis
+    data['hist'] = kde
+    data['eodf/Hz'] = EODf
+    data['nspikesbase'] = len(spikes)
+    data['durationbase/s'] = duration
+    data['ratebase/Hz'] = rate
+    data['cvbase'] = cv
+    data['lags'] = lags
+    data['serialcorrs'] = corrs
+    data['serialcorrnull'] = corrs_null
+    data['vectorstrength'] = vs
+    data['cyclic_phases'] = cphase
+    data['cyclic_rates'] = crate
+    data['burstfrac'] = bf
+    data['burstfracthresh'] = bft
+    data['burstthresh/s'] = thresh
+    return data
 
     
 def plot_baseline(axi, axc, axv, axb, s, EODf, data, model):
@@ -497,6 +491,21 @@ def spectra_model(EODf, model_params, contrasts,
     return freq, transfers, coheres, np.arange(len(am))*dt, am, spikes
 
 
+def analyse_spectra(contrast, freqs, transfer, cohere, fcutoff, model):
+    mask = (freqs>0) & (freqs<fcutoff)
+    transfer = transfer[mask]
+    cohere = cohere[mask]
+    freqs = freqs[mask]
+    idx = np.argmax(transfer)
+    model['contrast'] = contrast
+    model['transferfpeak/Hz'] = freqs[idx]
+    model['transferpeak/Hz'] = transfer[idx]
+    idx = np.argmax(cohere)
+    model['coherefpeak/Hz'] = freqs[idx]
+    model['coherepeak'] = cohere[idx]
+    return model
+
+
 def plot_transfers(ax, s, freq, transfers, contrasts, fcutoff):
     sel = freq <= fcutoff
     for trans, c, style in zip(transfers, contrasts, s.spectra_styles):
@@ -564,7 +573,6 @@ def check_baseeod(data_path, cell):
 def main(model_path):
     if model_path is None:
         model_path = '../models.csv'
-        #model_path = '../models_202106.csv'
     
     data_path = '../celldata'
     plot_path = 'plots'
@@ -626,10 +634,10 @@ def main(model_path):
         # baseline:
         data_spikes, data_eods = baseline_data(data_path, cell)
         model_spikes = baseline_model(EODf, model_params, baseline_tmax)
-        data, model = analyse_baseline(EODf, data_spikes, data_eods,
-                                       model_spikes, baseline_tmax,
-                                       data=data, model=model,
-                                       max_eods=15.5, max_lag=15)
+        data = analyse_baseline(EODf, data_spikes, data_eods, data,
+                                max_eods=15.5, max_lag=15)
+        model = analyse_baseline(EODf, model_spikes, baseline_tmax, model,
+                                 max_eods=15.5, max_lag=15)
         plot_baseline(axs[0, 0], axs[0, 1], axs[0, 2], axc[0:2,:].ravel(), s,
                       EODf, data, model)
         
@@ -656,6 +664,8 @@ def main(model_path):
         for ksd in [1, 2, 4]:
             frate, fratesd = rate(time, spikes, 0.001*ksd)
             model[f'respmod{ksd}/Hz'] = np.std(frate)
+        model = analyse_spectra(spectra_contrasts[1], freq, transfers[1],
+                                coheres[1], fcutoff, model)
         frate, fratesd = rate(time, spikes, 0.001)
         plot_raster(axn[0], s, time, am, frate, fratesd, spikes, 0.1)
         plot_transfers(axn[1], s, freq, transfers, spectra_contrasts, fcutoff)
@@ -672,7 +682,8 @@ def main(model_path):
         data_dicts.append(data)
         model_dicts.append(model)
 
-        #break
+        #if len(model_dicts) > 3:
+        #    break
 
     data = pd.DataFrame(data_dicts)
     model = pd.DataFrame(model_dicts)
@@ -682,7 +693,7 @@ def main(model_path):
     model = model.drop(columns=['isis', 'hist', 'lags', 'cyclic_phases', 'cyclic_rates', 'fon_contrasts', 'fon_line', 'fss_contrasts', 'fss_line'])
     model.serialcorrs = [c[1] for c in model.serialcorrs]
     model.rename(columns=dict(serialcorrs='serialcorr1'), inplace=True)
-    data.to_csv('punitdata.csv', index_label='index')
+    data.to_csv('punit' + suffix + 'data.csv', index_label='index')
     model.to_csv('model' + suffix + 'data.csv', index_label='index')
 
         
