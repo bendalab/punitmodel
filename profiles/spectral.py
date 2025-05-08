@@ -320,8 +320,9 @@ def hor_projection(freqs, chi2, fmax):
     return hfreqs, horp
 
 
-def peakedness(freqs, projection, fbase, median=True, df=5):
-    """ Normalized size of a peak expected around a specific frequency.
+def peakedness(freqs, projection, fbase, median=True,
+               searchwin=40, averagewin=10):
+    """Normalized size of a peak expected around a specific frequency.
 
     Parameters
     ----------
@@ -336,25 +337,47 @@ def peakedness(freqs, projection, fbase, median=True, df=5):
         If True, normalize the peak height by the median of the projection.
         Otherwise (default), normalize by averaged values of the projection
         close to the fbase frequency.
-    df: float
-        Sets the range around fbase where to look for a peak in the projection.
+    searchwin: float
+        Search for peak in the projection at fbase plus and
+        minus `searchwin` Hertz.
+    averagewin: float
+        For estimating the reference level, an average is taken in two
+        `averagewin` Hertz wide windows that are located `averagewin`
+        Hertz to the left and right of the detected peak.
 
     Returns
     -------
     p: float
-        The normalized height of the peak at fbase.
+        The normalized height of the peak close to fbase.
+    fpeak: float
+        The frequency of the detected peak.
+
     """
+    sel = (freqs > fbase - searchwin) & (freqs < fbase + searchwin)
+    snippet = projection[sel]
+    if len(snippet) == 0:
+        return np.nan, np.nan
+    peak = np.max(snippet)
+    fpeak = freqs[np.argmax(snippet) + np.argmax(sel)]
+    bleft = np.nan
+    bright = np.nan
     if median:
         baseline = np.median(projection)
     else:
-        bleft = np.mean(projection[(freqs >= fbase - 4*df) & (freqs <= fbase - 2*df)])
-        bright = np.mean(projection[(freqs >= fbase + 2*df) & (freqs <= fbase + 4*df)])
-        baseline = bleft if np.isnan(bright) else 0.5*(bleft + bright)
-    snippet = projection[(freqs > fbase - df) & (freqs < fbase + df)]
-    if len(snippet) == 0:
-        return 1
-    peak = np.max(snippet)
+        mask = (freqs >= fpeak - 2*averagewin) & (freqs <= fpeak - averagewin)
+        bleft = np.mean(projection[mask]) if np.sum(mask) > 0 else np.nan
+        mask = (freqs >= fpeak + averagewin) & (freqs <= fpeak + 2*averagewin)
+        bright = np.mean(projection[mask]) if np.sum(mask) > 0 else np.nan
+        if np.isfinite(bleft) and np.isfinite(bright):
+            baseline = 0.5*(bleft + bright)
+        elif np.isfinite(bleft):
+            baseline = bleft
+        elif np.isfinite(bright):
+            baseline = bright
+        else:
+            baseline = np.nan
     if np.isnan(peak/baseline):
-        print(peak, baseline, bleft, bright, median)
-    return peak/baseline
+        print(peak, fpeak, fbase, baseline, bleft, bright, median)
+        return np.nan, np.nan
+    return peak/baseline, fpeak
 

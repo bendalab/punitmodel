@@ -4,6 +4,7 @@ Analyse stationary spike trains
 ## Functions
 
 - `interval_statistics()`: statistics and kde of interspike intervals.
+- `burst_fraction()`: burst fraction based on ISI distribution.
 - `serial_correlations()`: serial correlations of interspike intervals.
 - `vector_strength()`: vector strength of spike times relative to a periodic signal.
 - `cyclic_rate()`: kernel density estimate of spike times relative to a periodic signal.
@@ -53,6 +54,54 @@ def interval_statistics(spikes, sigma=1e-4, maxisi=0.1):
     rate = 1/mean_isi
     cv = std_isi / mean_isi
     return isis, kde, rate, cv
+
+
+def burst_fraction(spikes, eodf, lthresh=0.1, rthresh=-0.05):
+    """ Burst fraction based on ISI distribution.
+
+    Parameters
+    ----------
+    spikes: nparray of floats
+        Spike times of baseline activity.
+    eodf: float
+        EOD frequency in Hertz.
+    lthresh: float
+        Minimum relative decrease in distribution left to local minimim.
+    rthresh: float
+        Minimum relative increase in distribution right to local minimim.
+
+    Returns
+    -------
+    bf: float
+        Number of ISIs shorter than 1.5/EODf relative to total number of ISIs.
+    bft: float
+        Number of ISIs shorter than `thresh` relative to total number of ISIs.
+    thresh: float
+        Local minimum in ISI distribution in seconds.
+    """
+    if not np.isfinite(eodf) or eodf <= 0:
+        return np.nan, np.nan, np.nan
+    intervals = np.diff(spikes)
+    maxisi = np.max(intervals)
+    if maxisi < 10/eodf:
+        maxisi = 10/eodf
+    bins = np.arange(0.5/eodf, maxisi, 1/eodf)
+    bins[0] = 0
+    counts, _ = np.histogram(intervals, bins)
+    bf = counts[0]/len(intervals)
+    diff = np.diff(counts)/(counts[:-1] + 1)
+    mask = (diff[:-1] < -lthresh) & (diff[1:] > rthresh)
+    if np.sum(mask) > 0:
+        idx = np.argmax(mask)
+        thresh = ((idx + 1) + 0.5)/eodf
+        bft = np.sum(counts[:idx + 1])/len(intervals)
+        if bft > 0.95 or bft < 0.01 or bf < 0.05:
+            thresh = 0
+            bft = 0
+    else:
+        thresh = 0
+        bft = 0
+    return bf, bft, thresh
 
 
 def serial_correlations(spikes, max_lag=10):
