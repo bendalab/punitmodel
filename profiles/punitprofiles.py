@@ -465,6 +465,7 @@ def spectra_model(EODf, model_params, contrasts,
     am = whitenoise(0, fcutoff, dt, tinit + tmax, rng=rng)
     am_interp = np.interp(np.arange(0, tinit + tmax, model_params['deltat']),
                           np.arange(len(am))*dt, am)
+    am = am[int(tinit/dt):]
     transfers = []
     coheres = []
     spikess = []
@@ -478,10 +479,8 @@ def spectra_model(EODf, model_params, contrasts,
             model_params['v_zero'] = np.random.rand()
             model_params['a_zero'] += 0.02*model_params['a_zero']*np.random.randn()
             spiket = simulate(stimulus, **model_params)
-            #spikes.append(spiket[spiket > tinit] - tinit)
-            spikes.append(spiket)
-        freq, pss, prr, prs = spectra(contrast*am,
-                                      spikes, dt, nfft)
+            spikes.append(spiket[spiket > tinit] - tinit)
+        freq, pss, prr, prs = spectra(contrast*am, spikes, dt, nfft)
         transfers.append(np.abs(prs)/pss)
         coheres.append(np.abs(prs)**2/pss/prr)
         spikess.append(spikes)
@@ -594,6 +593,8 @@ def main(model_path):
     spectra_contrasts = [0.01, 0.03, 0.1]
     s.spectra_styles = [pt.lighter(s.lsSpec, 0.4), pt.lighter(s.lsSpec, 0.7), s.lsSpec]
     fcutoff = 300
+    noise_tmax = 20 # seconds
+    noise_trials = 20
     data_dicts = []
     model_dicts = []
     modelspectral_dicts = []
@@ -654,10 +655,22 @@ def main(model_path):
         # spectra:
         freq, transfers, coheres, time, am, spikes = \
             spectra_model(EODf, model_params, spectra_contrasts,
-                          fcutoff, 0.0005, 2**9, tinit=0.5, tmax=20.0,
-                          trials=20)
+                          fcutoff, 0.0005, 2**9, tinit=0.5,
+                          tmax=noise_tmax, trials=noise_trials)
         for k in range(len(spectra_contrasts)):
+            isim = []
+            isisd = []
+            for sp in spikes[k]:
+                isis = np.diff(sp)
+                isim.append(np.mean(isis))
+                isisd.append(np.std(isis))
+            srate = np.mean([len(sp)/noise_tmax for sp in spikes[k]])
             modelspectral = dict(model)
+            modelspectral['fcutoff/Hz'] = fcutoff
+            modelspectral['duration/s'] = noise_tmax
+            modelspectral['trials'] = len(spikes[k])
+            modelspectral['ratestim/Hz'] = srate
+            modelspectral['cvstim'] = np.nanmean(isisd)/np.nanmean(isim)
             for ksd in [1, 2, 4]:
                 frate, fratesd = rate(time, spikes[k], 0.001*ksd)
                 modelspectral[f'respmod{ksd}/Hz'] = np.std(frate)
@@ -686,8 +699,8 @@ def main(model_path):
         data_dicts.append(data)
         model_dicts.append(model)
 
-        #if len(model_dicts) > 2:
-        #    break
+        if len(model_dicts) > 2:
+            break
 
     data = pd.DataFrame(data_dicts)
     model = pd.DataFrame(model_dicts)
