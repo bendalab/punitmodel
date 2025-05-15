@@ -699,8 +699,8 @@ def main(model_path):
         data_dicts.append(data)
         model_dicts.append(model)
 
-        if len(model_dicts) > 2:
-            break
+        #if len(model_dicts) > 2:
+        #    break
 
     data = pd.DataFrame(data_dicts)
     model = pd.DataFrame(model_dicts)
