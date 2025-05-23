@@ -6,7 +6,6 @@ Analyse stationary spike trains
 - `interval_statistics()`: statistics and kde of interspike intervals.
 - `burst_fraction()`: burst fraction based on ISI distribution.
 - `serial_correlations()`: serial correlations of interspike intervals.
-- `eod_times()`: times of EOD zero crossings.
 - `vector_strength()`: vector strength of spike times relative to a periodic signal.
 - `cyclic_rate()`: kernel density estimate of spike times relative to a periodic signal.
 
@@ -141,53 +140,6 @@ def serial_correlations(spikes, max_lag=10):
         perm_corrs[k] = np.corrcoef(xintervals, yintervals)[0,1]
     low, high = np.quantile(perm_corrs, (0.001, 0.999))
     return lags, corrs, max(-low, high)
-
-
-def eod_times(data, rate, eodf=None):
-    """Times of EOD zero crossings.
-
-    First, estimate EOD frequency from power spectrum.
-    The band-pass filter the data around that frequency.
-    From the filtered signal, detect and interpolate zero crossings.
-
-    Parameters
-    ----------
-    data: ndarray of float
-        Time series of an EOD.
-    rate: float
-        Sampling rate of the data.
-    eodf: None or float
-        An estimate of the EOD frequency. If provided, the EOD
-        frequency is not estimated from the power spectrum of the
-        data.
-
-    Returns
-    -------
-    times: ndarray of float
-        Times of EOD zero crossings.
-
-    """
-    # estimate EOD frequency:
-    if eodf is None:
-        nsamples = 0.2*rate  # samples that make up 0.2s (5Hz resolution)
-        nfft = 2**8
-        while nfft < nsamples:
-            nfft *= 2
-        freq, power = welch(data - np.mean(data), rate,
-                            nperseg=nfft, noverlap=nfft//2)
-        eodf = freq[np.argmax(power)]
-    # band-pass filter:
-    sos = butter(2, [0.5*eodf, 1.5*eodf], 'bandpass', fs=rate, output='sos')
-    fdata = sosfiltfilt(sos, data)
-    # detect zero crossings:
-    idx = np.nonzero((fdata[:-1] <= 0) & (fdata[1:] > 0))[0]
-    # interpolate:
-    time = np.arange(len(fdata))/rate
-    eodtimes = np.zeros(len(idx))
-    for k in range(len(idx)):
-        i = idx[k]
-        eodtimes[k] = np.interp(0, fdata[i:i + 2], time[i:i + 2])
-    return eodtimes
 
     
 def vector_strength(spikes, cycles):
