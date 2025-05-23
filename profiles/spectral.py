@@ -170,17 +170,27 @@ def susceptibilities(stimulus, spikes, dt=0.0005, nfft=2**9):
     ```
 
     The gain of the transfer function is the absolute value of the
-    transfer function:
+    transfer function and has the unit Hz/[s]:
 
     ```
     gain = np.abs(prs)/pss
     ```
 
-    The second-order susceptibility can be computed like this:
+    The second-order susceptibility has the unit [r]/[ss] and
+    can be computed like this:
 
     ```
-    chi2 = prss*0.5/np.sqrt(pss.reshape(1, -1)*pss.reshape(-1, 1))
+    chi2 = prss*0.5/(pss.reshape(1, -1)*pss.reshape(-1, 1))
     ```
+
+    The variance of the stimulus is the integral over the power spectrum:
+    ```
+    deltaf = freqs[1] - freqs[0]  # same as 1/(dt*nfft)
+    vars = np.sum(pss)*deltaf
+    ```
+    Likewise for the response.
+
+    The response spectral density prr approaches the firing rate for large frequencies.
 
     Parameters
     ----------
@@ -198,19 +208,18 @@ def susceptibilities(stimulus, spikes, dt=0.0005, nfft=2**9):
     freqs: ndarray of float
         The frequencies corresponding to the spectra.
     pss: ndarray of float
-        Power spectrum of the stimulus.
+        Power spectral density of the stimulus in unit [s]^2/Hz.
     prr: ndarray of float
-        Power spectrum of the response averaged over segments.
+        Power spectral density of the response averaged over segments in unit Hz^2/Hz = Hz.
     prs: ndarray of complex
-        Cross spectrum between stimulus and response averaged over segments.
+        Cross spectrum between stimulus and response averaged over segments in unit Hz[s]/Hz = [s].
     prss: ndarray of complex
         Cross bispectrum between stimulus and response averaged over segments.
     n: int
         Number of segments.
     """
     freqs = np.fft.fftfreq(nfft, dt)
-    idx = np.argmin(freqs)
-    freqs = np.roll(freqs, -idx)
+    freqs = np.fft.fftshift(freqs)
     f0 = np.argmin(np.abs(freqs))   # index of zero frequency
     fidx = np.arange(len(freqs))
     fsum_idx = fidx.reshape(-1, 1) + fidx.reshape(1, -1) - f0
@@ -219,16 +228,17 @@ def susceptibilities(stimulus, spikes, dt=0.0005, nfft=2**9):
     f0 = len(freqs)//4
     f1 = 3*len(freqs)//4
     segments = range(0, len(stimulus) - nfft, nfft)
+    scale = dt/nfft/n
     # stimulus:
     p_ss = np.zeros(len(freqs))
     fourier_s = np.zeros((len(segments), len(freqs)), complex)
     n = 0
     for j, k in enumerate(segments):
         fourier_s[j] = np.fft.fft(stimulus[k:k + nfft], n=nfft)
-        fourier_s[j] = np.roll(fourier_s[j], -idx)
+        fourier_s[j] = np.fft.fftshift(fourier_s[j])
         p_ss += np.abs(fourier_s[j]*np.conj(fourier_s[j]))
         n += 1
-    p_ss /= n
+    p_ss *= scale
     # response spectra:
     time = np.arange(len(stimulus))*dt
     p_rr = np.zeros(len(freqs))
@@ -245,12 +255,12 @@ def susceptibilities(stimulus, spikes, dt=0.0005, nfft=2**9):
             fourier_s12 = np.conj(fourier_s1)*np.conj(fourier_s2)
             # response:
             fourier_r = np.fft.fft(b[k:k + nfft] - np.mean(b), n=nfft)
-            fourier_r = np.roll(fourier_r, -idx)
+            fourier_r = np.fft.fftshift(fourier_r)
             p_rr += np.abs(fourier_r*np.conj(fourier_r))
             p_rs += np.conj(fourier_s[j])*fourier_r
             p_rss += fourier_s12*fourier_r[fsum_idx]
             n += 1
-    return freqs[f0:f1], p_ss[f0:f1], p_rr[f0:f1]/n, p_rs[f0:f1]/n, p_rss[f0:f1, f0:f1]/n, n
+    return freqs[f0:f1], p_ss[f0:f1], p_rr[f0:f1]*scale, p_rs[f0:f1]*scale, p_rss[f0:f1, f0:f1]*dt*scale, n
 
 
 def diag_projection(freqs, chi2, fmax):
@@ -321,7 +331,7 @@ def hor_projection(freqs, chi2, fmax):
 
 
 def peakedness(freqs, projection, fbase, median=True,
-               searchwin=40, averagewin=10):
+               searchwin=50, averagewin=10):
     """Normalized size of a peak expected around a specific frequency.
 
     Parameters
