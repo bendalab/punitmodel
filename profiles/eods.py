@@ -10,6 +10,7 @@ EOD analysis
 """
 
 import numpy as np
+from scipy.signal import welch, butter, sosfiltfilt
 from thunderlab.eventdetection import detect_peaks, std_threshold
 
 

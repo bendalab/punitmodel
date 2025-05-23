@@ -13,7 +13,6 @@ Analyse stationary spike trains
 
 import numpy as np
 from scipy.stats import gaussian_kde
-from scipy.signal import welch, butter, sosfiltfilt
 
 
 def interval_statistics(spikes, sigma=1e-4, maxisi=0.1):
