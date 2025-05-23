@@ -157,7 +157,7 @@ def spectra(stimulus, spikes, dt, nfft):
     return freq, pss, np.mean(prr, 0), np.mean(prs, 0)
 
 
-def susceptibilities(stimulus, spikes, dt=0.0005, nfft=2**9):
+def susceptibilities(stimulus, spikes, dt=0.0005, nfft=2**9, nmax=0):
     """ Stimulus- and response spectra up to second order.
 
     Compute the complex-valued transfer function (first-order
@@ -202,6 +202,8 @@ def susceptibilities(stimulus, spikes, dt=0.0005, nfft=2**9):
         Sampling interval of stimulus and resolution of the binary spike train.
     nfft: int
         Number of samples used for each Fourier transformation.
+    nmax: int
+        Maximum number of FFT segments to be used. If 0, use all segement.
 
     Returns
     -------
@@ -228,7 +230,6 @@ def susceptibilities(stimulus, spikes, dt=0.0005, nfft=2**9):
     f0 = len(freqs)//4
     f1 = 3*len(freqs)//4
     segments = range(0, len(stimulus) - nfft, nfft)
-    scale = dt/nfft/n
     # stimulus:
     p_ss = np.zeros(len(freqs))
     fourier_s = np.zeros((len(segments), len(freqs)), complex)
@@ -238,6 +239,9 @@ def susceptibilities(stimulus, spikes, dt=0.0005, nfft=2**9):
         fourier_s[j] = np.fft.fftshift(fourier_s[j])
         p_ss += np.abs(fourier_s[j]*np.conj(fourier_s[j]))
         n += 1
+        if nmax > 0 and n >= nmax:
+            break
+    scale = dt/nfft/n
     p_ss *= scale
     # response spectra:
     time = np.arange(len(stimulus))*dt
@@ -260,6 +264,11 @@ def susceptibilities(stimulus, spikes, dt=0.0005, nfft=2**9):
             p_rs += np.conj(fourier_s[j])*fourier_r
             p_rss += fourier_s12*fourier_r[fsum_idx]
             n += 1
+            if nmax > 0 and n >= nmax:
+                break
+        if nmax > 0 and n >= nmax:
+            break
+    scale = dt/nfft/n
     return freqs[f0:f1], p_ss[f0:f1], p_rr[f0:f1]*scale, p_rs[f0:f1]*scale, p_rss[f0:f1, f0:f1]*dt*scale, n
 
 
