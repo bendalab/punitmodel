@@ -9,7 +9,7 @@ Spectral analysis of neuronal responses.
 - `susceptibilities()`: stimulus- and response spectra up to second order.
 - `diag_projection()`: projection of the chi2 matrix onto its diagonal.
 - `hor_projection()`: horizontal projection of the chi2 matrix.
-- `peakedness()`: normalized size of a peak expected around a specific frequency.
+- `peak_size()`: normalized and relative size of a peak expected around a specific frequency.
 
 """
 
@@ -344,54 +344,70 @@ def hor_projection(freqs, chi2, fmax):
     return hfreqs, horp
 
 
-def peakedness(freqs, projection, fbase, median=True,
-               searchwin=50, averagewin=10):
-    """Normalized size of a peak expected around a specific frequency.
+def peak_size(freqs, spectrum, ftarget, median=True,
+              searchwin=50, distance=10, averagewin=10):
+    """Normalized and relative size of a peak expected around a specific frequency.
+
+    The peak is searched within `searchwin` Hz around the target
+    frequency.  As a baseline amplitude of the spectrum either the
+    averaged values of the spectrum within `averagewin` Hz at a
+    distance of `distance` Hz to the left and right of the found
+    peak frequency (`median` is `False`, default), or the median of
+    the whole spectrum is taken (`median` is `True`).
 
     Parameters
     ----------
     freqs: ndarray of float
-        Frequencies of the projection.
-    projection: ndarray of float
-        Projection of the chi2 matrix.
-    fbase: float
-        The neurons baseline-frequency.
-        That is, the frequency where a peak is expected in the projection.
+        Frequencies of the spectrum.
+    spectrum: ndarray of float
+        Some spectrum. Or a projection of the chi2 matrix.
+    ftarget: float
+        The frequency where a peak is expected in the spectrum.
     median: bool
-        If True, normalize the peak height by the median of the projection.
-        Otherwise (default), normalize by averaged values of the projection
-        close to the fbase frequency.
+        If True, normalize the peak height by the median of the spectrum.
+        Otherwise (default), normalize by averaged values of the spectrum
+        close to the `peak frequency.
     searchwin: float
-        Search for peak in the projection at fbase plus and
+        Search for the largest peak in the spectrum at `ftarget`  plus and
         minus `searchwin` Hertz.
+    distance: float
+        The windows for estimating the baseline around the peak start
+        `distance` Hertz to the left and right of the found peak.
     averagewin: float
-        For estimating the reference level, an average is taken in two
-        `averagewin` Hertz wide windows that are located `averagewin`
+        For estimating the baseline around the peak, an average is taken in two
+        `averagewin` Hertz wide windows that are located `distance`
         Hertz to the left and right of the detected peak.
 
     Returns
     -------
-    p: float
-        The normalized height of the peak close to fbase.
-    fpeak: float
+    peak_norm: float
+        The height of the peak close to `ftarget` normalized to the
+        baseline around the peak.
+    peak_rel: float
+        The height of the peak close to `ftarget` relative to the
+        baseline around the peak.
+    peak_freq: float
         The frequency of the detected peak.
 
     """
-    sel = (freqs > fbase - searchwin) & (freqs < fbase + searchwin)
-    snippet = projection[sel]
+    mask = (freqs > ftarget - searchwin) & (freqs < ftarget + searchwin)
+    snippet = spectrum[mask]
     if len(snippet) == 0:
-        return np.nan, np.nan
+        return np.nan, np.nan, np.nan
     peak = np.max(snippet)
-    fpeak = freqs[np.argmax(snippet) + np.argmax(sel)]
+    fpeak = freqs[np.argmax(snippet) + np.argmax(mask)]
     bleft = np.nan
     bright = np.nan
+    baseline = np.nan
     if median:
-        baseline = np.median(projection)
+        baseline = np.median(spectrum)
     else:
-        mask = (freqs >= fpeak - 2*averagewin) & (freqs <= fpeak - averagewin)
-        bleft = np.mean(projection[mask]) if np.sum(mask) > 0 else np.nan
-        mask = (freqs >= fpeak + averagewin) & (freqs <= fpeak + 2*averagewin)
-        bright = np.mean(projection[mask]) if np.sum(mask) > 0 else np.nan
+        mask = (freqs >= fpeak - distance - averagewin) & \
+               (freqs <= fpeak - distance)
+        bleft = np.mean(spectrum[mask]) if np.sum(mask) > 0 else np.nan
+        mask = (freqs >= fpeak + distance) & \
+               (freqs <= fpeak + distance + averagewin)
+        bright = np.mean(spectrum[mask]) if np.sum(mask) > 0 else np.nan
         if np.isfinite(bleft) and np.isfinite(bright):
             baseline = 0.5*(bleft + bright)
         elif np.isfinite(bleft):
@@ -400,8 +416,9 @@ def peakedness(freqs, projection, fbase, median=True,
             baseline = bright
         else:
             baseline = np.nan
-    if np.isnan(peak/baseline):
-        print(peak, fpeak, fbase, baseline, bleft, bright, median)
-        return np.nan, np.nan
-    return peak/baseline, fpeak
+    if np.isnan(baseline):
+        return np.nan, np.nan, np.nan
+    peak_norm = peak/baseline
+    peak_rel = peak - baseline
+    return peak_norm, peak_rel, fpeak
 
