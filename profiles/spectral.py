@@ -203,7 +203,7 @@ def susceptibilities(stimulus, spikes, dt=0.0005, nfft=2**9, nmax=0):
     nfft: int
         Number of samples used for each Fourier transformation.
     nmax: int
-        Maximum number of FFT segments to be used. If 0, use all segement.
+        Maximum number of FFT segments to be used. If 0, use all segments.
 
     Returns
     -------
@@ -218,7 +218,7 @@ def susceptibilities(stimulus, spikes, dt=0.0005, nfft=2**9, nmax=0):
     prss: ndarray of complex
         Cross bispectrum between stimulus and response averaged over segments.
     n: int
-        Number of segments.
+        Number of FFT segments used.
     """
     freqs = np.fft.fftfreq(nfft, dt)
     freqs = np.fft.fftshift(freqs)
@@ -269,7 +269,12 @@ def susceptibilities(stimulus, spikes, dt=0.0005, nfft=2**9, nmax=0):
         if nmax > 0 and n >= nmax:
             break
     scale = dt/nfft/n
-    return freqs[f0:f1], p_ss[f0:f1], p_rr[f0:f1]*scale, p_rs[f0:f1]*scale, p_rss[f0:f1, f0:f1]*dt*scale, n
+    freqs = freqs[f0:f1]
+    p_ss = p_ss[f0:f1]
+    p_rr = p_rr[f0:f1]*scale
+    p_rs = p_rs[f0:f1]*scale
+    p_rss = p_rss[f0:f1, f0:f1]*dt*scale
+    return freqs, p_ss, p_rr, p_rs, p_rss, n
 
 
 def diag_projection(freqs, chi2, fmax):
