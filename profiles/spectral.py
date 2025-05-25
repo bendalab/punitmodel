@@ -158,7 +158,7 @@ def spectra(stimulus, spikes, dt, nfft):
 
 
 def susceptibilities(stimulus, spikes, dt=0.0005, nfft=2**9, nmax=0):
-    """ Stimulus- and response spectra up to second order.
+    """Stimulus- and response spectra up to second order.
 
     Compute the complex-valued transfer function (first-order
     susceptibility) and the stimulus-response coherence like this:
@@ -176,21 +176,23 @@ def susceptibilities(stimulus, spikes, dt=0.0005, nfft=2**9, nmax=0):
     gain = np.abs(prs)/pss
     ```
 
-    The second-order susceptibility has the unit [r]/[ss] and
-    can be computed like this:
+    The complex-valued second-order susceptibility has the unit
+    Hz/[ss] and can be computed like this:
 
     ```
     chi2 = prss*0.5/(pss.reshape(1, -1)*pss.reshape(-1, 1))
     ```
 
-    The variance of the stimulus is the integral over the power spectrum:
+    The variance of the stimulus is the integral over the stimulus
+    power spectral density `pss` (unit [s]^2/Hz):
     ```
     deltaf = freqs[1] - freqs[0]  # same as 1/(dt*nfft)
     vars = np.sum(pss)*deltaf
     ```
     Likewise for the response.
 
-    The response spectral density prr approaches the firing rate for large frequencies.
+    The response spectral density `prr` (in Hz^2/Hz = Hz) approaches
+    the firing rate for large frequencies.
 
     Parameters
     ----------
@@ -212,13 +214,17 @@ def susceptibilities(stimulus, spikes, dt=0.0005, nfft=2**9, nmax=0):
     pss: ndarray of float
         Power spectral density of the stimulus in unit [s]^2/Hz.
     prr: ndarray of float
-        Power spectral density of the response averaged over segments in unit Hz^2/Hz = Hz.
+        Power spectral density of the response averaged over segments
+        in unit Hz^2/Hz = Hz.
     prs: ndarray of complex
-        Cross spectrum between stimulus and response averaged over segments in unit Hz[s]/Hz = [s].
+        Cross spectrum between stimulus and response averaged over segments
+        in unit Hz[s]/Hz = [s].
     prss: ndarray of complex
-        Cross bispectrum between stimulus and response averaged over segments.
+        Cross bispectrum between stimulus and response averaged
+        over segments in unit [s]^2/Hz.
     n: int
         Number of FFT segments used.
+
     """
     freqs = np.fft.fftfreq(nfft, dt)
     freqs = np.fft.fftshift(freqs)
