@@ -9,7 +9,7 @@ Spectral analysis of neuronal responses.
 - `susceptibilities()`: stimulus- and response spectra up to second order.
 - `diag_projection()`: projection of the chi2 matrix onto its diagonal.
 - `hor_projection()`: horizontal projection of the chi2 matrix.
-- `peakedness()`: normalized size of a peak expected around a specific frequency.
+- `peak_size()`: normalized and relative size of a peak expected around a specific frequency.
 
 """
 
@@ -157,8 +157,8 @@ def spectra(stimulus, spikes, dt, nfft):
     return freq, pss, np.mean(prr, 0), np.mean(prs, 0)
 
 
-def susceptibilities(stimulus, spikes, dt=0.0005, nfft=2**9):
-    """ Stimulus- and response spectra up to second order.
+def susceptibilities(stimulus, spikes, dt=0.0005, nfft=2**9, nmax=0):
+    """Stimulus- and response spectra up to second order.
 
     Compute the complex-valued transfer function (first-order
     susceptibility) and the stimulus-response coherence like this:
@@ -170,17 +170,29 @@ def susceptibilities(stimulus, spikes, dt=0.0005, nfft=2**9):
     ```
 
     The gain of the transfer function is the absolute value of the
-    transfer function:
+    transfer function and has the unit Hz/[s]:
 
     ```
     gain = np.abs(prs)/pss
     ```
 
-    The second-order susceptibility can be computed like this:
+    The complex-valued second-order susceptibility has the unit
+    Hz/[ss] and can be computed like this:
 
     ```
-    chi2 = prss*0.5/np.sqrt(pss.reshape(1, -1)*pss.reshape(-1, 1))
+    chi2 = prss*0.5/(pss.reshape(1, -1)*pss.reshape(-1, 1))
     ```
+
+    The variance of the stimulus is the integral over the stimulus
+    power spectral density `pss` (unit [s]^2/Hz):
+    ```
+    deltaf = freqs[1] - freqs[0]  # same as 1/(dt*nfft)
+    vars = np.sum(pss)*deltaf
+    ```
+    Likewise for the response.
+
+    The response spectral density `prr` (in Hz^2/Hz = Hz) approaches
+    the firing rate for large frequencies.
 
     Parameters
     ----------
@@ -192,25 +204,30 @@ def susceptibilities(stimulus, spikes, dt=0.0005, nfft=2**9):
         Sampling interval of stimulus and resolution of the binary spike train.
     nfft: int
         Number of samples used for each Fourier transformation.
+    nmax: int
+        Maximum number of FFT segments to be used. If 0, use all segments.
 
     Returns
     -------
     freqs: ndarray of float
         The frequencies corresponding to the spectra.
     pss: ndarray of float
-        Power spectrum of the stimulus.
+        Power spectral density of the stimulus in unit [s]^2/Hz.
     prr: ndarray of float
-        Power spectrum of the response averaged over segments.
+        Power spectral density of the response averaged over segments
+        in unit Hz^2/Hz = Hz.
     prs: ndarray of complex
-        Cross spectrum between stimulus and response averaged over segments.
+        Cross spectrum between stimulus and response averaged over segments
+        in unit Hz[s]/Hz = [s].
     prss: ndarray of complex
-        Cross bispectrum between stimulus and response averaged over segments.
+        Cross bispectrum between stimulus and response averaged
+        over segments in unit [s]^2/Hz.
     n: int
-        Number of segments.
+        Number of FFT segments used.
+
     """
     freqs = np.fft.fftfreq(nfft, dt)
-    idx = np.argmin(freqs)
-    freqs = np.roll(freqs, -idx)
+    freqs = np.fft.fftshift(freqs)
     f0 = np.argmin(np.abs(freqs))   # index of zero frequency
     fidx = np.arange(len(freqs))
     fsum_idx = fidx.reshape(-1, 1) + fidx.reshape(1, -1) - f0
@@ -225,10 +242,13 @@ def susceptibilities(stimulus, spikes, dt=0.0005, nfft=2**9):
     n = 0
     for j, k in enumerate(segments):
         fourier_s[j] = np.fft.fft(stimulus[k:k + nfft], n=nfft)
-        fourier_s[j] = np.roll(fourier_s[j], -idx)
+        fourier_s[j] = np.fft.fftshift(fourier_s[j])
         p_ss += np.abs(fourier_s[j]*np.conj(fourier_s[j]))
         n += 1
-    p_ss /= n
+        if nmax > 0 and n >= nmax:
+            break
+    scale = dt/nfft/n
+    p_ss *= scale
     # response spectra:
     time = np.arange(len(stimulus))*dt
     p_rr = np.zeros(len(freqs))
@@ -245,12 +265,22 @@ def susceptibilities(stimulus, spikes, dt=0.0005, nfft=2**9):
             fourier_s12 = np.conj(fourier_s1)*np.conj(fourier_s2)
             # response:
             fourier_r = np.fft.fft(b[k:k + nfft] - np.mean(b), n=nfft)
-            fourier_r = np.roll(fourier_r, -idx)
+            fourier_r = np.fft.fftshift(fourier_r)
             p_rr += np.abs(fourier_r*np.conj(fourier_r))
             p_rs += np.conj(fourier_s[j])*fourier_r
             p_rss += fourier_s12*fourier_r[fsum_idx]
             n += 1
-    return freqs[f0:f1], p_ss[f0:f1], p_rr[f0:f1]/n, p_rs[f0:f1]/n, p_rss[f0:f1, f0:f1]/n, n
+            if nmax > 0 and n >= nmax:
+                break
+        if nmax > 0 and n >= nmax:
+            break
+    scale = dt/nfft/n
+    freqs = freqs[f0:f1]
+    p_ss = p_ss[f0:f1]
+    p_rr = p_rr[f0:f1]*scale
+    p_rs = p_rs[f0:f1]*scale
+    p_rss = p_rss[f0:f1, f0:f1]*dt*scale
+    return freqs, p_ss, p_rr, p_rs, p_rss, n
 
 
 def diag_projection(freqs, chi2, fmax):
@@ -320,54 +350,70 @@ def hor_projection(freqs, chi2, fmax):
     return hfreqs, horp
 
 
-def peakedness(freqs, projection, fbase, median=True,
-               searchwin=40, averagewin=10):
-    """Normalized size of a peak expected around a specific frequency.
+def peak_size(freqs, spectrum, ftarget, median=True,
+              searchwin=50, distance=10, averagewin=10):
+    """Normalized and relative size of a peak expected around a specific frequency.
+
+    The peak is searched within `searchwin` Hz around the target
+    frequency.  As a baseline amplitude of the spectrum either the
+    averaged values of the spectrum within `averagewin` Hz at a
+    distance of `distance` Hz to the left and right of the found
+    peak frequency (`median` is `False`, default), or the median of
+    the whole spectrum is taken (`median` is `True`).
 
     Parameters
     ----------
     freqs: ndarray of float
-        Frequencies of the projection.
-    projection: ndarray of float
-        Projection of the chi2 matrix.
-    fbase: float
-        The neurons baseline-frequency.
-        That is, the frequency where a peak is expected in the projection.
+        Frequencies of the spectrum.
+    spectrum: ndarray of float
+        Some spectrum. Or a projection of the chi2 matrix.
+    ftarget: float
+        The frequency where a peak is expected in the spectrum.
     median: bool
-        If True, normalize the peak height by the median of the projection.
-        Otherwise (default), normalize by averaged values of the projection
-        close to the fbase frequency.
+        If True, normalize the peak height by the median of the spectrum.
+        Otherwise (default), normalize by averaged values of the spectrum
+        close to the `peak frequency.
     searchwin: float
-        Search for peak in the projection at fbase plus and
+        Search for the largest peak in the spectrum at `ftarget`  plus and
         minus `searchwin` Hertz.
+    distance: float
+        The windows for estimating the baseline around the peak start
+        `distance` Hertz to the left and right of the found peak.
     averagewin: float
-        For estimating the reference level, an average is taken in two
-        `averagewin` Hertz wide windows that are located `averagewin`
+        For estimating the baseline around the peak, an average is taken in two
+        `averagewin` Hertz wide windows that are located `distance`
         Hertz to the left and right of the detected peak.
 
     Returns
     -------
-    p: float
-        The normalized height of the peak close to fbase.
-    fpeak: float
+    peak_norm: float
+        The height of the peak close to `ftarget` normalized to the
+        baseline around the peak.
+    peak_rel: float
+        The height of the peak close to `ftarget` relative to the
+        baseline around the peak.
+    peak_freq: float
         The frequency of the detected peak.
 
     """
-    sel = (freqs > fbase - searchwin) & (freqs < fbase + searchwin)
-    snippet = projection[sel]
+    mask = (freqs > ftarget - searchwin) & (freqs < ftarget + searchwin)
+    snippet = spectrum[mask]
     if len(snippet) == 0:
-        return np.nan, np.nan
+        return np.nan, np.nan, np.nan
     peak = np.max(snippet)
-    fpeak = freqs[np.argmax(snippet) + np.argmax(sel)]
+    fpeak = freqs[np.argmax(snippet) + np.argmax(mask)]
     bleft = np.nan
     bright = np.nan
+    baseline = np.nan
     if median:
-        baseline = np.median(projection)
+        baseline = np.median(spectrum)
     else:
-        mask = (freqs >= fpeak - 2*averagewin) & (freqs <= fpeak - averagewin)
-        bleft = np.mean(projection[mask]) if np.sum(mask) > 0 else np.nan
-        mask = (freqs >= fpeak + averagewin) & (freqs <= fpeak + 2*averagewin)
-        bright = np.mean(projection[mask]) if np.sum(mask) > 0 else np.nan
+        mask = (freqs >= fpeak - distance - averagewin) & \
+               (freqs <= fpeak - distance)
+        bleft = np.mean(spectrum[mask]) if np.sum(mask) > 0 else np.nan
+        mask = (freqs >= fpeak + distance) & \
+               (freqs <= fpeak + distance + averagewin)
+        bright = np.mean(spectrum[mask]) if np.sum(mask) > 0 else np.nan
         if np.isfinite(bleft) and np.isfinite(bright):
             baseline = 0.5*(bleft + bright)
         elif np.isfinite(bleft):
@@ -376,8 +422,9 @@ def peakedness(freqs, projection, fbase, median=True,
             baseline = bright
         else:
             baseline = np.nan
-    if np.isnan(peak/baseline):
-        print(peak, fpeak, fbase, baseline, bleft, bright, median)
-        return np.nan, np.nan
-    return peak/baseline, fpeak
+    if np.isnan(baseline):
+        return np.nan, np.nan, np.nan
+    peak_norm = peak/baseline
+    peak_rel = peak - baseline
+    return peak_norm, peak_rel, fpeak
 
