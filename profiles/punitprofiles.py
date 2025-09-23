@@ -1,16 +1,19 @@
 import sys
 sys.path.insert(0, '..')  # for model.py
 import os
+import argparse
 import numpy as np
-from scipy.optimize import curve_fit
 import pandas as pd
 import matplotlib.pyplot as plt
-from model import simulate, load_models
+import plottools.plottools as pt
+
+from scipy.optimize import curve_fit
+
+from model import simulate, simulate_power, load_models
 from eods import plot_eod_interval_hist
 from baseline import interval_statistics, burst_fraction, serial_correlations
 from baseline import vector_strength, cyclic_rate
 from spectral import whitenoise, spectra, rate
-import plottools.plottools as pt
 
 
 def plot_style():
@@ -151,7 +154,8 @@ def baseline_model(EODf, model_params, tmax=10):
     # baseline EOD with amplitude 1:
     stimulus = np.sin(2*np.pi*EODf*time)
     # integrate the model:
-    spikes = simulate(stimulus, **model_params)
+    spikes = simulate_power(stimulus, **model_params, power=3)
+    # spikes = simulate(stimulus, **model_params)
     return spikes
 
 
@@ -300,7 +304,8 @@ def firate_model(EODf, model_params, contrasts, t0=-0.4, t1=0.2):
         for k in range(n):
             model_params['v_zero'] = np.random.rand()
             model_params['a_zero'] += 0.02*model_params['a_zero']*np.random.randn()
-            spikes = simulate(stimulus, **model_params)
+            spikes = simulate_power(stimulus, **model_params, power=3)
+            # spikes = simulate(stimulus, **model_params)
             spikes += time[0]
             trial_rate = instantaneous_rate(spikes, time)
             rate += trial_rate/n
@@ -469,7 +474,7 @@ def spectra_model(EODf, model_params, contrasts,
     transfers = []
     coheres = []
     spikess = []
-    for i, contrast in enumerate(contrasts):
+    for contrast in contrasts:
         # generate EOD stimulus with an amplitude step:
         stimulus = np.sin(2*np.pi*EODf*time)
         stimulus[-len(am_interp):] *= 1 + contrast*am_interp
@@ -478,7 +483,8 @@ def spectra_model(EODf, model_params, contrasts,
         for k in range(trials):
             model_params['v_zero'] = np.random.rand()
             model_params['a_zero'] += 0.02*model_params['a_zero']*np.random.randn()
-            spiket = simulate(stimulus, **model_params)
+            spiket = simulate_power(stimulus, **model_params, power=3)
+            # spiket = simulate(stimulus, **model_params)
             spikes.append(spiket[spiket > tinit] - tinit)
         freq, pss, prr, prs = spectra(contrast*am, spikes, dt, nfft)
         transfers.append(np.abs(prs)/pss)
@@ -523,7 +529,7 @@ def plot_coherences(ax, s, freq, coherences, contrasts, fcutoff):
     ax.set_xticks_delta(100)
     ax.legend(loc='upper right', markerfirst=True)
 
-    
+
 def plot_raster(ax, s, time, am, frate, fratesd, spikes, twin):
     t0 = 1.0
     sel = (time >= t0) & (time <= t0 + twin)
@@ -543,8 +549,8 @@ def plot_raster(ax, s, time, am, frate, fratesd, spikes, twin):
     axs.axhline(0, **s.lsGrid)
     axs.plot(1e3*(time[sel] - t0), am[sel], clip_on=False, **s.lsStim)
     axs.text(-5, 0, r'10\,\%', ha='right', va='center')
-    
-    
+
+
 def check_baseeod(data_path, cell):
     """
     bad EODs (clipped EOD trace!)
@@ -565,55 +571,27 @@ def check_baseeod(data_path, cell):
     plt.show()
 
 
-def main(model_path):
-    if model_path is None:
-        model_path = '../models.csv'
-    
-    data_path = '../celldata'
-    plot_path = 'plots'
-    suffix = ''
-    if '_' in model_path:
-        suffix = '_' + model_path.split('_')[-1].split('.')[0]
-    plot_path += suffix
-    if not os.path.isdir(plot_path):
-        os.mkdir(plot_path)
-        
-    s = plot_style()
+def argument_parser():
+    parser = argparse.ArgumentParser(description="""Create a profile plot for P-unit model cells.""")
+    parser.add_argument("model_path", type=str, help="Relative path to the CSV table holding the model parameters.")
+    parser.add_argument("-i", "--cellidx", type=int, default=None,
+                        help="Index of the chosen model, if not provided, all models will be profiled.")
+    parser.add_argument("-o", "--outpath", type=str, default="plots",
+                        help="relative path into which the plots will be written")
+    parser.add_argument("-p", "--power", type=float, default=1.0, help="Signal exponentiation after rectification. Default is 1.0, i.e. linear transmission.")
+    parser.add_argument("-s", "--suffix", type=str, default="",
+                        help="Optional suffix that will be appended to the created output file names.")
 
-    baseline_tmax = 15 # seconds
-    model_contrasts = np.arange(-0.3, 0.31, 0.01)
-    rate_contrasts = [-0.2, +0.05, -0.1, +0.1, -0.05, +0.2]
-    s.rate_styles = [s.lsNegContrast,
-                     pt.lighter(s.lsPosContrast, 0.4),
-                     pt.lighter(s.lsNegContrast, 0.7),
-                     pt.lighter(s.lsPosContrast, 0.7),
-                     pt.lighter(s.lsNegContrast, 0.4),
-                     s.lsPosContrast]
-    #spectra_contrasts = [0.05, 0.1, 0.2]
-    spectra_contrasts = [0.01, 0.03, 0.1]
-    s.spectra_styles = [pt.lighter(s.lsSpec, 0.4), pt.lighter(s.lsSpec, 0.7), s.lsSpec]
-    fcutoff = 300
-    noise_tmax = 20 # seconds
-    noise_trials = 20
-    data_dicts = []
-    model_dicts = []
-    modelspectral_dicts = []
-    
-    # load model parameter:
-    parameters = load_models(model_path)
+    return parser
 
-    # loop over model cells:
-    for cell_idx in range(len(parameters)):
-    #for cell_idx in [-1]:
-        model_params = parameters[cell_idx]
+
+def main(model_path=None, suffix=""):
+    def run_simulation(model_params, cell_idx):
         cell = model_params.pop('cell')
         name = model_params.pop('name', '')
         EODf = model_params.pop('EODf')
-        print(f'cell {cell_idx:3d}: {cell} {name}')
         data = dict(cell=cell)
         model = dict(cell=cell)
-        #check_baseeod(data_path, cell)
-        #continue
 
         # setup figure:
         fig, axg = plt.subplots(2, 2, cmsize=(16, 15), width_ratios=[42, 2],
@@ -637,7 +615,7 @@ def main(model_path):
         analyse_baseline(EODf, model_spikes, baseline_tmax, model, max_eods=15.5, max_lag=15)
         plot_baseline(axs[0, 0], axs[0, 1], axs[0, 2], axc[0:2,:].ravel(), s,
                       EODf, data, model)
-        
+
         # fi curves:
         data_contrasts, data_fonset, data_fss = ficurve_data(data_path, cell)
         time, rates = firate_model(EODf, model_params, model_contrasts)
@@ -647,7 +625,7 @@ def main(model_path):
         plot_ficurves(axs[1, 0], axc[2:4,:].ravel(), s, EODf,
                       data_contrasts, data_fonset, data_fss,
                       model_contrasts, model_fonset, model_fss, data, model)
-        
+
         # fi rates:
         time, rates = firate_model(EODf, model_params, rate_contrasts)
         plot_firates(axr, None, s, rate_contrasts, time, rates)
@@ -689,9 +667,9 @@ def main(model_path):
         plot_coherences(axn[2], s, freq, coheres, spectra_contrasts, fcutoff)
 
         fig.common_yspines(axc)
-        file_name = cell
+        file_name = cell + args.suffix
         if name:
-            file_name = file_name + '-' + name
+            file_name = file_name + '-' + name + args.suffix
         fig.savefig(os.path.join(plot_path, file_name))
         plt.close(fig)
         #plt.show()
@@ -699,8 +677,58 @@ def main(model_path):
         data_dicts.append(data)
         model_dicts.append(model)
 
-        #if len(model_dicts) > 2:
-        #    break
+    parser = argument_parser()
+    args = parser.parse_args()
+    data_path = '../celldata'
+
+    # come consistency checks
+    if not os.path.exists(data_path):
+        raise ValueError(f"Cellular data path {data_path} does not exist!")
+    if not os.path.exists(args.model_path):
+        raise ValueError(f"Given model_path {args.model_path} does not exist")
+
+    plot_path = args.outpath
+    model_suffix = ''
+    if '_' in args.model_path:
+        model_suffix = '_' + args.model_path.split('_')[-1].split('.')[0]
+
+    plot_path += model_suffix
+    if not os.path.isdir(plot_path):
+        os.mkdir(plot_path)
+    s = plot_style()
+
+    baseline_tmax = 15 # seconds
+    model_contrasts = np.arange(-0.3, 0.31, 0.01)
+    rate_contrasts = [-0.2, +0.05, -0.1, +0.1, -0.05, +0.2]
+    s.rate_styles = [s.lsNegContrast,
+                     pt.lighter(s.lsPosContrast, 0.4),
+                     pt.lighter(s.lsNegContrast, 0.7),
+                     pt.lighter(s.lsPosContrast, 0.7),
+                     pt.lighter(s.lsNegContrast, 0.4),
+                     s.lsPosContrast]
+    #spectra_contrasts = [0.05, 0.1, 0.2]
+    spectra_contrasts = [0.01, 0.03, 0.1]
+    s.spectra_styles = [pt.lighter(s.lsSpec, 0.4), pt.lighter(s.lsSpec, 0.7), s.lsSpec]
+    fcutoff = 300
+    noise_tmax = 20 # seconds
+    noise_trials = 20
+    data_dicts = []
+    model_dicts = []
+    modelspectral_dicts = []
+
+    # load model parameter:
+    parameters = load_models(args.model_path)
+    if args.cellidx is not None and (args.cellidx < 0 or args.cellidx >= len(parameters)):
+        raise ValueError("Requested cell index {args.cellidx} does not exist in model table {args.model_path}!")
+
+    if args.cellidx is not None:
+        model_params = parameters[args.cellidx]
+        print(f'cell {args.cellidx:3d}: {model_params["cell"]} {model_params.get("name", "")}')
+        run_simulation(model_params, args.cellidx)
+    else:
+        for cell_idx, model_params in enumerate(parameters):
+            print(f'cell {cell_idx:3d}: {model_params["cell"]} {model_params.get("name", "")}')
+            run_simulation(model_params, cell_idx)
 
     data = pd.DataFrame(data_dicts)
     model = pd.DataFrame(model_dicts)
@@ -714,10 +742,10 @@ def main(model_path):
     modelspectral = modelspectral.drop(columns=['isis', 'hist', 'lags', 'cyclic_phases', 'cyclic_rates', 'fon_contrasts', 'fon_line', 'fss_contrasts', 'fss_line'])
     modelspectral.serialcorrs = [c[1] for c in modelspectral.serialcorrs]
     modelspectral.rename(columns=dict(serialcorrs='serialcorr1'), inplace=True)
-    data.to_csv('punit' + suffix + 'data.csv', index_label='index')
-    model.to_csv('model' + suffix + 'data.csv', index_label='index')
-    modelspectral.to_csv('model' + suffix + 'spectraldata.csv', index_label='index')
+    data.to_csv('punit' + model_suffix + 'data.csv', index_label='index') # add suffix
+    model.to_csv('model' + model_suffix + 'data.csv', index_label='index')  # same here
+    modelspectral.to_csv('model' + model_suffix + 'spectraldata.csv', index_label='index')
 
-        
+
 if __name__ == '__main__':
-    main(sys.argv[1] if len(sys.argv) > 1 else None)
+    main(sys.argv[1] if len(sys.argv) > 1 else None, sys.argv[2] if len(sys.argv) > 2 else "")
