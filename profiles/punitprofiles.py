@@ -9,7 +9,7 @@ import plottools.plottools as pt
 
 from scipy.optimize import curve_fit
 
-from model import simulate, simulate_power, load_models
+from model import simulate, load_models
 from eods import plot_eod_interval_hist
 from baseline import interval_statistics, burst_fraction, serial_correlations
 from baseline import vector_strength, cyclic_rate
@@ -137,7 +137,7 @@ def baseline_data(data_path, cell):
     return spikes, eods
 
 
-def baseline_model(EODf, model_params, tmax=10):
+def baseline_model(EODf, model_params, tmax=10, power=1.0):
     """ Simulate baseline activity.
 
     Parameters
@@ -148,14 +148,15 @@ def baseline_model(EODf, model_params, tmax=10):
         Model parameters.
     tmax: float
         Time to simulate baseline activity.
+    power: float
+        The exponent used in the P-unit model
     """
     deltat = model_params['deltat']
     time = np.arange(0, tmax, deltat)
     # baseline EOD with amplitude 1:
     stimulus = np.sin(2*np.pi*EODf*time)
     # integrate the model:
-    spikes = simulate_power(stimulus, **model_params, power=3)
-    # spikes = simulate(stimulus, **model_params)
+    spikes = simulate(stimulus, **model_params, power=power)
     return spikes
 
 
@@ -275,7 +276,7 @@ def ficurve_data(data_path, cell):
     return contrasts, fonset, fss
 
 
-def firate_model(EODf, model_params, contrasts, t0=-0.4, t1=0.2):
+def firate_model(EODf, model_params, contrasts, t0=-0.4, t1=0.2, power=1.0):
     """ Simulate spike frequencies in response to step stimuli.
 
     Parameters
@@ -304,8 +305,7 @@ def firate_model(EODf, model_params, contrasts, t0=-0.4, t1=0.2):
         for k in range(n):
             model_params['v_zero'] = np.random.rand()
             model_params['a_zero'] += 0.02*model_params['a_zero']*np.random.randn()
-            spikes = simulate_power(stimulus, **model_params, power=3)
-            # spikes = simulate(stimulus, **model_params)
+            spikes = simulate(stimulus, **model_params, power=power)
             spikes += time[0]
             trial_rate = instantaneous_rate(spikes, time)
             rate += trial_rate/n
@@ -441,7 +441,7 @@ def plot_firates(ax, axc, s, contrasts, time, rates):
 
 def spectra_model(EODf, model_params, contrasts,
                   fcutoff=300, dt = 0.0005, nfft = 2**9,
-                  tinit=0.5, tmax=4.0, trials=20):
+                  tinit=0.5, tmax=4.0, trials=20, power=1.0):
     """ Simulate response spectra to whitenoise stimuli.
 
     Parameters
@@ -462,6 +462,8 @@ def spectra_model(EODf, model_params, contrasts,
         Total time of simulation after tskip in seconds.
     trials: int
         Number of trials.
+    power: float
+        Exponent used after stimulus rectification in the P-unit model. Defaults to 1.0
     """
     deltat = model_params['deltat']
     time = np.arange(0, tinit + tmax, deltat)
@@ -483,8 +485,7 @@ def spectra_model(EODf, model_params, contrasts,
         for k in range(trials):
             model_params['v_zero'] = np.random.rand()
             model_params['a_zero'] += 0.02*model_params['a_zero']*np.random.randn()
-            spiket = simulate_power(stimulus, **model_params, power=3)
-            # spiket = simulate(stimulus, **model_params)
+            spiket = simulate(stimulus, **model_params, power=power)
             spikes.append(spiket[spiket > tinit] - tinit)
         freq, pss, prr, prs = spectra(contrast*am, spikes, dt, nfft)
         transfers.append(np.abs(prs)/pss)
@@ -585,7 +586,7 @@ def argument_parser():
     return parser
 
 
-def main(model_path=None, suffix=""):
+def main():
     def run_simulation(model_params, cell_idx):
         cell = model_params.pop('cell')
         name = model_params.pop('name', '')
@@ -599,7 +600,7 @@ def main(model_path=None, suffix=""):
         fig.subplots_adjust(leftm=8.5, rightm=3, bottomm=4.5, topm=4,
                             wspace=0.07, hspace=0.25)
         fig.text(0.03, 0.97, f'{cell} {name}', ha='left', fontsize='large')
-        fig.text(0.5, 0.97, f'{os.path.basename(model_path)} {cell_idx}', ha='center', color=s.colors['gray'])
+        fig.text(0.5, 0.97, f'{os.path.basename(args.model_path)} idx:{cell_idx} pwr:{args.power}', ha='center', color=s.colors['gray'])
         fig.text(0.97, 0.97, f'EOD$f$={EODf:.0f}Hz', ha='right', fontsize='large')
         axs = axg[0, 0].subplots(2, 3, wspace=0.8, hspace=0.4)
         axs[0, 2] = axs[0, 2].make_polar(-0.02, -0.05)
@@ -610,7 +611,7 @@ def main(model_path=None, suffix=""):
 
         # baseline:
         data_spikes, data_eods = baseline_data(data_path, cell)
-        model_spikes = baseline_model(EODf, model_params, baseline_tmax)
+        model_spikes = baseline_model(EODf, model_params, baseline_tmax, power=args.power)
         analyse_baseline(EODf, data_spikes, data_eods, data, max_eods=15.5, max_lag=15)
         analyse_baseline(EODf, model_spikes, baseline_tmax, model, max_eods=15.5, max_lag=15)
         plot_baseline(axs[0, 0], axs[0, 1], axs[0, 2], axc[0:2,:].ravel(), s,
@@ -618,7 +619,7 @@ def main(model_path=None, suffix=""):
 
         # fi curves:
         data_contrasts, data_fonset, data_fss = ficurve_data(data_path, cell)
-        time, rates = firate_model(EODf, model_params, model_contrasts)
+        time, rates = firate_model(EODf, model_params, model_contrasts, power=args.power)
         model_fonset, model_fss, baseline = ficurves(time, rates)
         fit_ficurves(EODf, data_contrasts, data_fonset, data_fss, data)
         fit_ficurves(EODf, model_contrasts, model_fonset, model_fss, model)
@@ -634,8 +635,8 @@ def main(model_path=None, suffix=""):
         freq, transfers, coheres, time, am, spikes = \
             spectra_model(EODf, model_params, spectra_contrasts,
                           fcutoff, 0.0005, 2**9, tinit=0.5,
-                          tmax=noise_tmax, trials=noise_trials)
-        for k in range(len(spectra_contrasts)):
+                          tmax=noise_tmax, trials=noise_trials, power=args.power)
+        for k, spec_contrast in enumerate(spectra_contrasts):
             isim = []
             isisd = []
             for sp in spikes[k]:
@@ -652,10 +653,10 @@ def main(model_path=None, suffix=""):
             for ksd in [1, 2, 4]:
                 frate, fratesd = rate(time, spikes[k], 0.001*ksd)
                 modelspectral[f'respmod{ksd}/Hz'] = np.std(frate)
-            analyse_spectra(spectra_contrasts[k], freq, transfers[k],
+            analyse_spectra(spec_contrast, freq, transfers[k],
                             coheres[k], fcutoff, modelspectral)
             modelspectral_dicts.append(modelspectral)
-            
+
         for ksd in [1, 2, 4]:
             frate, fratesd = rate(time, spikes[-1], 0.001*ksd)
             model[f'respmod{ksd}/Hz'] = np.std(frate)
@@ -721,6 +722,7 @@ def main(model_path=None, suffix=""):
     if args.cellidx is not None and (args.cellidx < 0 or args.cellidx >= len(parameters)):
         raise ValueError("Requested cell index {args.cellidx} does not exist in model table {args.model_path}!")
 
+    # actually run the simulation(s)
     if args.cellidx is not None:
         model_params = parameters[args.cellidx]
         print(f'cell {args.cellidx:3d}: {model_params["cell"]} {model_params.get("name", "")}')
@@ -742,10 +744,10 @@ def main(model_path=None, suffix=""):
     modelspectral = modelspectral.drop(columns=['isis', 'hist', 'lags', 'cyclic_phases', 'cyclic_rates', 'fon_contrasts', 'fon_line', 'fss_contrasts', 'fss_line'])
     modelspectral.serialcorrs = [c[1] for c in modelspectral.serialcorrs]
     modelspectral.rename(columns=dict(serialcorrs='serialcorr1'), inplace=True)
-    data.to_csv('punit' + model_suffix + 'data.csv', index_label='index') # add suffix
-    model.to_csv('model' + model_suffix + 'data.csv', index_label='index')  # same here
+    data.to_csv('punit' + model_suffix + args.suffix +'data.csv', index_label='index')
+    model.to_csv('model' + model_suffix + args.suffix + 'data.csv', index_label='index')
     modelspectral.to_csv('model' + model_suffix + 'spectraldata.csv', index_label='index')
 
 
 if __name__ == '__main__':
-    main(sys.argv[1] if len(sys.argv) > 1 else None, sys.argv[2] if len(sys.argv) > 2 else "")
+    main()
