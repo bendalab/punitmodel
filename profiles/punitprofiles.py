@@ -1,16 +1,19 @@
 import sys
 sys.path.insert(0, '..')  # for model.py
 import os
+import argparse
 import numpy as np
-from scipy.optimize import curve_fit
 import pandas as pd
 import matplotlib.pyplot as plt
+import plottools.plottools as pt
+
+from scipy.optimize import curve_fit
+
 from model import simulate, load_models
 from eods import plot_eod_interval_hist
 from baseline import interval_statistics, burst_fraction, serial_correlations
 from baseline import vector_strength, cyclic_rate
 from spectral import whitenoise, spectra, rate
-import plottools.plottools as pt
 
 
 def plot_style():
@@ -134,7 +137,7 @@ def baseline_data(data_path, cell):
     return spikes, eods
 
 
-def baseline_model(EODf, model_params, tmax=10):
+def baseline_model(EODf, model_params, tmax=10, power=1.0):
     """ Simulate baseline activity.
 
     Parameters
@@ -145,13 +148,15 @@ def baseline_model(EODf, model_params, tmax=10):
         Model parameters.
     tmax: float
         Time to simulate baseline activity.
+    power: float
+        The exponent used in the P-unit model
     """
     deltat = model_params['deltat']
     time = np.arange(0, tmax, deltat)
     # baseline EOD with amplitude 1:
     stimulus = np.sin(2*np.pi*EODf*time)
     # integrate the model:
-    spikes = simulate(stimulus, **model_params)
+    spikes = simulate(stimulus, **model_params, power=power)
     return spikes
 
 
@@ -271,7 +276,7 @@ def ficurve_data(data_path, cell):
     return contrasts, fonset, fss
 
 
-def firate_model(EODf, model_params, contrasts, t0=-0.4, t1=0.2):
+def firate_model(EODf, model_params, contrasts, t0=-0.4, t1=0.2, power=1.0):
     """ Simulate spike frequencies in response to step stimuli.
 
     Parameters
@@ -300,7 +305,7 @@ def firate_model(EODf, model_params, contrasts, t0=-0.4, t1=0.2):
         for k in range(n):
             model_params['v_zero'] = np.random.rand()
             model_params['a_zero'] += 0.02*model_params['a_zero']*np.random.randn()
-            spikes = simulate(stimulus, **model_params)
+            spikes = simulate(stimulus, **model_params, power=power)
             spikes += time[0]
             trial_rate = instantaneous_rate(spikes, time)
             rate += trial_rate/n
@@ -436,7 +441,7 @@ def plot_firates(ax, axc, s, contrasts, time, rates):
 
 def spectra_model(EODf, model_params, contrasts,
                   fcutoff=300, dt = 0.0005, nfft = 2**9,
-                  tinit=0.5, tmax=4.0, trials=20):
+                  tinit=0.5, tmax=4.0, trials=20, power=1.0):
     """ Simulate response spectra to whitenoise stimuli.
 
     Parameters
@@ -457,6 +462,8 @@ def spectra_model(EODf, model_params, contrasts,
         Total time of simulation after tskip in seconds.
     trials: int
         Number of trials.
+    power: float
+        Exponent used after stimulus rectification in the P-unit model. Defaults to 1.0
     """
     deltat = model_params['deltat']
     time = np.arange(0, tinit + tmax, deltat)
@@ -469,7 +476,7 @@ def spectra_model(EODf, model_params, contrasts,
     transfers = []
     coheres = []
     spikess = []
-    for i, contrast in enumerate(contrasts):
+    for contrast in contrasts:
         # generate EOD stimulus with an amplitude step:
         stimulus = np.sin(2*np.pi*EODf*time)
         stimulus[-len(am_interp):] *= 1 + contrast*am_interp
@@ -478,7 +485,7 @@ def spectra_model(EODf, model_params, contrasts,
         for k in range(trials):
             model_params['v_zero'] = np.random.rand()
             model_params['a_zero'] += 0.02*model_params['a_zero']*np.random.randn()
-            spiket = simulate(stimulus, **model_params)
+            spiket = simulate(stimulus, **model_params, power=power)
             spikes.append(spiket[spiket > tinit] - tinit)
         freq, pss, prr, prs = spectra(contrast*am, spikes, dt, nfft)
         transfers.append(np.abs(prs)/pss)
@@ -523,7 +530,7 @@ def plot_coherences(ax, s, freq, coherences, contrasts, fcutoff):
     ax.set_xticks_delta(100)
     ax.legend(loc='upper right', markerfirst=True)
 
-    
+
 def plot_raster(ax, s, time, am, frate, fratesd, spikes, twin):
     t0 = 1.0
     sel = (time >= t0) & (time <= t0 + twin)
@@ -543,8 +550,8 @@ def plot_raster(ax, s, time, am, frate, fratesd, spikes, twin):
     axs.axhline(0, **s.lsGrid)
     axs.plot(1e3*(time[sel] - t0), am[sel], clip_on=False, **s.lsStim)
     axs.text(-5, 0, r'10\,\%', ha='right', va='center')
-    
-    
+
+
 def check_baseeod(data_path, cell):
     """
     bad EODs (clipped EOD trace!)
@@ -565,19 +572,130 @@ def check_baseeod(data_path, cell):
     plt.show()
 
 
-def main(model_path):
-    if model_path is None:
-        model_path = '../models.csv'
-    
+def argument_parser():
+    parser = argparse.ArgumentParser(description="""Create a profile plot for P-unit model cells.""")
+    parser.add_argument("model_path", type=str, help="Relative path to the CSV table holding the model parameters.")
+    parser.add_argument("-i", "--cellidx", type=int, default=None,
+                        help="Index of the chosen model, if not provided, all models will be profiled.")
+    parser.add_argument("-o", "--outpath", type=str, default="plots",
+                        help="relative path into which the plots will be written")
+    parser.add_argument("-p", "--power", type=float, default=1.0, help="Signal exponentiation after rectification. Default is 1.0, i.e. linear transmission.")
+    parser.add_argument("-s", "--suffix", type=str, default="",
+                        help="Optional suffix that will be appended to the created output file names.")
+
+    return parser
+
+
+def main():
+    def run_simulation(model_params, cell_idx):
+        cell = model_params.pop('cell')
+        name = model_params.pop('name', '')
+        EODf = model_params.pop('EODf')
+        data = dict(cell=cell)
+        model = dict(cell=cell)
+
+        # setup figure:
+        fig, axg = plt.subplots(2, 2, cmsize=(16, 15), width_ratios=[42, 2],
+                                height_ratios=[3, 1])
+        fig.subplots_adjust(leftm=8.5, rightm=3, bottomm=4.5, topm=4,
+                            wspace=0.07, hspace=0.25)
+        fig.text(0.03, 0.97, f'{cell} {name}', ha='left', fontsize='large')
+        fig.text(0.5, 0.97, f'{os.path.basename(args.model_path)} idx:{cell_idx} pwr:{args.power}', ha='center', color=s.colors['gray'])
+        fig.text(0.97, 0.97, f'EOD$f$={EODf:.0f}Hz', ha='right', fontsize='large')
+        axs = axg[0, 0].subplots(2, 3, wspace=0.8, hspace=0.4)
+        axs[0, 2] = axs[0, 2].make_polar(-0.02, -0.05)
+        axr = fig.merge(axs[1, 1:3])
+        axc = axg[0, 1].subplots(4, 2, hspace=0.6, wspace=0.2)
+        axg[1, 1].set_visible(False)
+        axn = axg[1, 0].subplots(1, 3, width_ratios=[3, 2, 2], wspace=0.6)
+
+        # baseline:
+        data_spikes, data_eods = baseline_data(data_path, cell)
+        model_spikes = baseline_model(EODf, model_params, baseline_tmax, power=args.power)
+        analyse_baseline(EODf, data_spikes, data_eods, data, max_eods=15.5, max_lag=15)
+        analyse_baseline(EODf, model_spikes, baseline_tmax, model, max_eods=15.5, max_lag=15)
+        plot_baseline(axs[0, 0], axs[0, 1], axs[0, 2], axc[0:2,:].ravel(), s,
+                      EODf, data, model)
+
+        # fi curves:
+        data_contrasts, data_fonset, data_fss = ficurve_data(data_path, cell)
+        time, rates = firate_model(EODf, model_params, model_contrasts, power=args.power)
+        model_fonset, model_fss, baseline = ficurves(time, rates)
+        fit_ficurves(EODf, data_contrasts, data_fonset, data_fss, data)
+        fit_ficurves(EODf, model_contrasts, model_fonset, model_fss, model)
+        plot_ficurves(axs[1, 0], axc[2:4,:].ravel(), s, EODf,
+                      data_contrasts, data_fonset, data_fss,
+                      model_contrasts, model_fonset, model_fss, data, model)
+
+        # fi rates:
+        time, rates = firate_model(EODf, model_params, rate_contrasts)
+        plot_firates(axr, None, s, rate_contrasts, time, rates)
+
+        # spectra:
+        freq, transfers, coheres, time, am, spikes = \
+            spectra_model(EODf, model_params, spectra_contrasts,
+                          fcutoff, 0.0005, 2**9, tinit=0.5,
+                          tmax=noise_tmax, trials=noise_trials, power=args.power)
+        for k, spec_contrast in enumerate(spectra_contrasts):
+            isim = []
+            isisd = []
+            for sp in spikes[k]:
+                isis = np.diff(sp)
+                isim.append(np.mean(isis))
+                isisd.append(np.std(isis))
+            srate = np.mean([len(sp)/noise_tmax for sp in spikes[k]])
+            modelspectral = dict(model)
+            modelspectral['fcutoff/Hz'] = fcutoff
+            modelspectral['duration/s'] = noise_tmax
+            modelspectral['trials'] = len(spikes[k])
+            modelspectral['ratestim/Hz'] = srate
+            modelspectral['cvstim'] = np.nanmean(isisd)/np.nanmean(isim)
+            for ksd in [1, 2, 4]:
+                frate, fratesd = rate(time, spikes[k], 0.001*ksd)
+                modelspectral[f'respmod{ksd}/Hz'] = np.std(frate)
+            analyse_spectra(spec_contrast, freq, transfers[k],
+                            coheres[k], fcutoff, modelspectral)
+            modelspectral_dicts.append(modelspectral)
+
+        for ksd in [1, 2, 4]:
+            frate, fratesd = rate(time, spikes[-1], 0.001*ksd)
+            model[f'respmod{ksd}/Hz'] = np.std(frate)
+        analyse_spectra(spectra_contrasts[-1], freq, transfers[-1],
+                        coheres[-1], fcutoff, model)
+        frate, fratesd = rate(time, spikes[-1], 0.001)
+        plot_raster(axn[0], s, time, am, frate, fratesd, spikes[-1], 0.1)
+        plot_transfers(axn[1], s, freq, transfers, spectra_contrasts, fcutoff)
+        plot_coherences(axn[2], s, freq, coheres, spectra_contrasts, fcutoff)
+
+        fig.common_yspines(axc)
+        file_name = cell + args.suffix
+        if name:
+            file_name = file_name + '-' + name + args.suffix
+        fig.savefig(os.path.join(plot_path, file_name))
+        plt.close(fig)
+        #plt.show()
+
+        data_dicts.append(data)
+        model_dicts.append(model)
+
+    parser = argument_parser()
+    args = parser.parse_args()
     data_path = '../celldata'
-    plot_path = 'plots'
-    suffix = ''
-    if '_' in model_path:
-        suffix = '_' + model_path.split('_')[-1].split('.')[0]
-    plot_path += suffix
+
+    # come consistency checks
+    if not os.path.exists(data_path):
+        raise ValueError(f"Cellular data path {data_path} does not exist!")
+    if not os.path.exists(args.model_path):
+        raise ValueError(f"Given model_path {args.model_path} does not exist")
+
+    plot_path = args.outpath
+    model_suffix = ''
+    if '_' in args.model_path:
+        model_suffix = '_' + args.model_path.split('_')[-1].split('.')[0]
+
+    plot_path += model_suffix
     if not os.path.isdir(plot_path):
         os.mkdir(plot_path)
-        
     s = plot_style()
 
     baseline_tmax = 15 # seconds
@@ -598,109 +716,21 @@ def main(model_path):
     data_dicts = []
     model_dicts = []
     modelspectral_dicts = []
-    
+
     # load model parameter:
-    parameters = load_models(model_path)
+    parameters = load_models(args.model_path)
+    if args.cellidx is not None and (args.cellidx < 0 or args.cellidx >= len(parameters)):
+        raise ValueError("Requested cell index {args.cellidx} does not exist in model table {args.model_path}!")
 
-    # loop over model cells:
-    for cell_idx in range(len(parameters)):
-    #for cell_idx in [-1]:
-        model_params = parameters[cell_idx]
-        cell = model_params.pop('cell')
-        name = model_params.pop('name', '')
-        EODf = model_params.pop('EODf')
-        print(f'cell {cell_idx:3d}: {cell} {name}')
-        data = dict(cell=cell)
-        model = dict(cell=cell)
-        #check_baseeod(data_path, cell)
-        #continue
-
-        # setup figure:
-        fig, axg = plt.subplots(2, 2, cmsize=(16, 15), width_ratios=[42, 2],
-                                height_ratios=[3, 1])
-        fig.subplots_adjust(leftm=8.5, rightm=3, bottomm=4.5, topm=4,
-                            wspace=0.07, hspace=0.25)
-        fig.text(0.03, 0.97, f'{cell} {name}', ha='left', fontsize='large')
-        fig.text(0.5, 0.97, f'{os.path.basename(model_path)} {cell_idx}', ha='center', color=s.colors['gray'])
-        fig.text(0.97, 0.97, f'EOD$f$={EODf:.0f}Hz', ha='right', fontsize='large')
-        axs = axg[0, 0].subplots(2, 3, wspace=0.8, hspace=0.4)
-        axs[0, 2] = axs[0, 2].make_polar(-0.02, -0.05)
-        axr = fig.merge(axs[1, 1:3])
-        axc = axg[0, 1].subplots(4, 2, hspace=0.6, wspace=0.2)
-        axg[1, 1].set_visible(False)
-        axn = axg[1, 0].subplots(1, 3, width_ratios=[3, 2, 2], wspace=0.6)
-
-        # baseline:
-        data_spikes, data_eods = baseline_data(data_path, cell)
-        model_spikes = baseline_model(EODf, model_params, baseline_tmax)
-        analyse_baseline(EODf, data_spikes, data_eods, data, max_eods=15.5, max_lag=15)
-        analyse_baseline(EODf, model_spikes, baseline_tmax, model, max_eods=15.5, max_lag=15)
-        plot_baseline(axs[0, 0], axs[0, 1], axs[0, 2], axc[0:2,:].ravel(), s,
-                      EODf, data, model)
-        
-        # fi curves:
-        data_contrasts, data_fonset, data_fss = ficurve_data(data_path, cell)
-        time, rates = firate_model(EODf, model_params, model_contrasts)
-        model_fonset, model_fss, baseline = ficurves(time, rates)
-        fit_ficurves(EODf, data_contrasts, data_fonset, data_fss, data)
-        fit_ficurves(EODf, model_contrasts, model_fonset, model_fss, model)
-        plot_ficurves(axs[1, 0], axc[2:4,:].ravel(), s, EODf,
-                      data_contrasts, data_fonset, data_fss,
-                      model_contrasts, model_fonset, model_fss, data, model)
-        
-        # fi rates:
-        time, rates = firate_model(EODf, model_params, rate_contrasts)
-        plot_firates(axr, None, s, rate_contrasts, time, rates)
-
-        # spectra:
-        freq, transfers, coheres, time, am, spikes = \
-            spectra_model(EODf, model_params, spectra_contrasts,
-                          fcutoff, 0.0005, 2**9, tinit=0.5,
-                          tmax=noise_tmax, trials=noise_trials)
-        for k in range(len(spectra_contrasts)):
-            isim = []
-            isisd = []
-            for sp in spikes[k]:
-                isis = np.diff(sp)
-                isim.append(np.mean(isis))
-                isisd.append(np.std(isis))
-            srate = np.mean([len(sp)/noise_tmax for sp in spikes[k]])
-            modelspectral = dict(model)
-            modelspectral['fcutoff/Hz'] = fcutoff
-            modelspectral['duration/s'] = noise_tmax
-            modelspectral['trials'] = len(spikes[k])
-            modelspectral['ratestim/Hz'] = srate
-            modelspectral['cvstim'] = np.nanmean(isisd)/np.nanmean(isim)
-            for ksd in [1, 2, 4]:
-                frate, fratesd = rate(time, spikes[k], 0.001*ksd)
-                modelspectral[f'respmod{ksd}/Hz'] = np.std(frate)
-            analyse_spectra(spectra_contrasts[k], freq, transfers[k],
-                            coheres[k], fcutoff, modelspectral)
-            modelspectral_dicts.append(modelspectral)
-            
-        for ksd in [1, 2, 4]:
-            frate, fratesd = rate(time, spikes[-1], 0.001*ksd)
-            model[f'respmod{ksd}/Hz'] = np.std(frate)
-        analyse_spectra(spectra_contrasts[-1], freq, transfers[-1],
-                        coheres[-1], fcutoff, model)
-        frate, fratesd = rate(time, spikes[-1], 0.001)
-        plot_raster(axn[0], s, time, am, frate, fratesd, spikes[-1], 0.1)
-        plot_transfers(axn[1], s, freq, transfers, spectra_contrasts, fcutoff)
-        plot_coherences(axn[2], s, freq, coheres, spectra_contrasts, fcutoff)
-
-        fig.common_yspines(axc)
-        file_name = cell
-        if name:
-            file_name = file_name + '-' + name
-        fig.savefig(os.path.join(plot_path, file_name))
-        plt.close(fig)
-        #plt.show()
-
-        data_dicts.append(data)
-        model_dicts.append(model)
-
-        #if len(model_dicts) > 2:
-        #    break
+    # actually run the simulation(s)
+    if args.cellidx is not None:
+        model_params = parameters[args.cellidx]
+        print(f'cell {args.cellidx:3d}: {model_params["cell"]} {model_params.get("name", "")}')
+        run_simulation(model_params, args.cellidx)
+    else:
+        for cell_idx, model_params in enumerate(parameters):
+            print(f'cell {cell_idx:3d}: {model_params["cell"]} {model_params.get("name", "")}')
+            run_simulation(model_params, cell_idx)
 
     data = pd.DataFrame(data_dicts)
     model = pd.DataFrame(model_dicts)
@@ -714,10 +744,10 @@ def main(model_path):
     modelspectral = modelspectral.drop(columns=['isis', 'hist', 'lags', 'cyclic_phases', 'cyclic_rates', 'fon_contrasts', 'fon_line', 'fss_contrasts', 'fss_line'])
     modelspectral.serialcorrs = [c[1] for c in modelspectral.serialcorrs]
     modelspectral.rename(columns=dict(serialcorrs='serialcorr1'), inplace=True)
-    data.to_csv('punit' + suffix + 'data.csv', index_label='index')
-    model.to_csv('model' + suffix + 'data.csv', index_label='index')
-    modelspectral.to_csv('model' + suffix + 'spectraldata.csv', index_label='index')
+    data.to_csv('punit' + model_suffix + args.suffix +'data.csv', index_label='index')
+    model.to_csv('model' + model_suffix + args.suffix + 'data.csv', index_label='index')
+    modelspectral.to_csv('model' + model_suffix + 'spectraldata.csv', index_label='index')
 
-        
+
 if __name__ == '__main__':
-    main(sys.argv[1] if len(sys.argv) > 1 else None)
+    main()
