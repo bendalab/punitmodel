@@ -71,6 +71,7 @@ def simulate(stimulus, deltat=0.00005, v_zero=0.0, a_zero=2.0,
     adapt = a_zero
 
     # prepare noise:    
+    # noise_strength = np.sqrt(noise_strength * 2)   ## addition by Sascha for models*big.csv
     noise = np.random.randn(len(stimulus))
     noise *= noise_strength / np.sqrt(deltat)
 
